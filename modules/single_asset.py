@@ -94,22 +94,35 @@ def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
 def single_asset_page():
     st.title("Single Asset Analysis – Brent (BZ=F)")
 
-    col1, col2, col3 = st.columns(3)
+    # ---- Contrôles interactifs (ticker, période, périodicité, stratégie) ----
+    col1, col2, col3, col4 = st.columns(4)
+
     with col1:
         ticker = st.text_input("Ticker", value="BZ=F")
+
     with col2:
         period = st.selectbox(
             "Historique",
             ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
             index=3,
         )
+
     with col3:
+        interval = st.selectbox(
+            "Périodicité",
+            ["1d", "1wk", "1mo"],
+            index=0,
+            help="1d = daily, 1wk = weekly, 1mo = monthly",
+        )
+
+    with col4:
         strategy_name = st.selectbox(
             "Stratégie",
             ["Buy & Hold", "Momentum (MA rapide / MA lente)"],
             index=0,
         )
 
+    # Paramètres de stratégie (Momentum)
     fast, slow = 20, 50
     if "Momentum" in strategy_name:
         c_fast, c_slow = st.columns(2)
@@ -121,8 +134,9 @@ def single_asset_page():
             st.warning("La MA lente doit être strictement plus grande que la MA rapide.")
             return
 
+    # ---- Lancement du backtest ----
     if st.button("Lancer le backtest"):
-        data = load_price_history(ticker, period=period, interval="1d")
+        data = load_price_history(ticker, period=period, interval=interval)
         if data.empty:
             st.error("Impossible de charger les données pour ce ticker.")
             return
@@ -157,7 +171,6 @@ def single_asset_page():
 
         # ----- Actif -----
         st.markdown("### Actif (Brent)")
-
         ca1, ca2, ca3, ca4 = st.columns(4)
         ca1.metric("Rendement annuel", f"{asset_metrics['annual_return'] * 100:.2f}%")
         ca2.metric("Vol annuel", f"{asset_metrics['annual_vol'] * 100:.2f}%")
@@ -171,7 +184,6 @@ def single_asset_page():
 
         # ----- Stratégie Buy & Hold -----
         st.markdown("### Stratégie Buy & Hold")
-
         cb1, cb2, cb3, cb4 = st.columns(4)
         cb1.metric("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
         cb2.metric("Vol annuel", f"{bh_metrics['annual_vol'] * 100:.2f}%")

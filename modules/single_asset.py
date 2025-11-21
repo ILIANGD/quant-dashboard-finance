@@ -41,10 +41,7 @@ def backtest_momentum_ma(prices: pd.Series, fast: int = 20, slow: int = 50) -> p
 # ---------- MÉTRIQUES ----------
 
 def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
-    """
-    Calcule des métriques standard (rendement annuel, vol, Sharpe, max drawdown)
-    à partir d'une série de valeurs (prix ou equity de stratégie).
-    """
+    """Compute key performance metrics for an asset or strategy."""
     if isinstance(series, pd.DataFrame):
         series = series.iloc[:, 0]
 
@@ -53,24 +50,42 @@ def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
     if rets.empty:
         return {}
 
-    mean_ret = float(rets.mean())
-    vol = float(rets.std())
+    # Basic stats
+    mean_daily = float(rets.mean())
+    vol_daily = float(rets.std())
 
-    if vol == 0 or pd.isna(vol):
+    # Annualization (252 = trading days)
+    annual_return = (1 + mean_daily) ** 252 - 1
+    annual_vol = vol_daily * (252 ** 0.5)
+
+    # Sharpe ratio
+    if annual_vol == 0 or pd.isna(annual_vol):
         sharpe = float("nan")
     else:
-        sharpe = (mean_ret * 252) / (vol * (252 ** 0.5))
+        sharpe = annual_return / annual_vol
 
+    # Drawdown
     cum = (1 + rets).cumprod()
     running_max = cum.cummax()
-    drawdown = (cum / running_max - 1)
+    drawdown = cum / running_max - 1
     max_dd = float(drawdown.min())
 
+    # Calmar = return / max_drawdown
+    calmar = float("nan") if max_dd == 0 else annual_return / abs(max_dd)
+
+    # Sortino: downside-only volatility
+    downside = rets[rets < 0].std() * (252 ** 0.5)
+    sortino = annual_return / downside if downside != 0 else float("nan")
+
     return {
-        "annual_return": (1 + mean_ret) ** 252 - 1,
-        "annual_vol": vol * (252 ** 0.5),
+        "mean_daily": mean_daily,
+        "vol_daily": vol_daily,
+        "annual_return": annual_return,
+        "annual_vol": annual_vol,
         "sharpe": sharpe,
         "max_drawdown": max_dd,
+        "calmar": calmar,
+        "sortino": sortino,
     }
 
 
@@ -140,24 +155,45 @@ def single_asset_page():
         bh_metrics = compute_metrics(equity_bh)
         mom_metrics = compute_metrics(equity_mom) if equity_mom is not None else None
 
-        st.markdown("**Actif (Brent)**")
+        # ----- Actif -----
+        st.markdown("### Actif (Brent)")
+
         ca1, ca2, ca3, ca4 = st.columns(4)
-        ca1.metric("Rendement annuel", f"{asset_metrics['annual_return']*100:.2f}%")
-        ca2.metric("Vol annuel", f"{asset_metrics['annual_vol']*100:.2f}%")
+        ca1.metric("Rendement annuel", f"{asset_metrics['annual_return'] * 100:.2f}%")
+        ca2.metric("Vol annuel", f"{asset_metrics['annual_vol'] * 100:.2f}%")
         ca3.metric("Sharpe", f"{asset_metrics['sharpe']:.2f}")
-        ca4.metric("Max drawdown", f"{asset_metrics['max_drawdown']*100:.2f}%")
+        ca4.metric("Max drawdown", f"{asset_metrics['max_drawdown'] * 100:.2f}%")
 
-        st.markdown("**Stratégie Buy & Hold**")
+        ca5, ca6, ca7, _ = st.columns(4)
+        ca5.metric("Calmar", f"{asset_metrics['calmar']:.2f}")
+        ca6.metric("Sortino", f"{asset_metrics['sortino']:.2f}")
+        ca7.metric("Rendement/jour", f"{asset_metrics['mean_daily'] * 100:.3f}%")
+
+        # ----- Stratégie Buy & Hold -----
+        st.markdown("### Stratégie Buy & Hold")
+
         cb1, cb2, cb3, cb4 = st.columns(4)
-        cb1.metric("Rendement annuel", f"{bh_metrics['annual_return']*100:.2f}%")
-        cb2.metric("Vol annuel", f"{bh_metrics['annual_vol']*100:.2f}%")
+        cb1.metric("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
+        cb2.metric("Vol annuel", f"{bh_metrics['annual_vol'] * 100:.2f}%")
         cb3.metric("Sharpe", f"{bh_metrics['sharpe']:.2f}")
-        cb4.metric("Max drawdown", f"{bh_metrics['max_drawdown']*100:.2f}%")
+        cb4.metric("Max drawdown", f"{bh_metrics['max_drawdown'] * 100:.2f}%")
 
+        cb5, cb6, cb7, _ = st.columns(4)
+        cb5.metric("Calmar", f"{bh_metrics['calmar']:.2f}")
+        cb6.metric("Sortino", f"{bh_metrics['sortino']:.2f}")
+        cb7.metric("Rendement/jour", f"{bh_metrics['mean_daily'] * 100:.3f}%")
+
+        # ----- Stratégie Momentum (si présente) -----
         if mom_metrics is not None:
-            st.markdown("**Stratégie Momentum**")
+            st.markdown("### Stratégie Momentum")
+
             cm1, cm2, cm3, cm4 = st.columns(4)
-            cm1.metric("Rendement annuel", f"{mom_metrics['annual_return']*100:.2f}%")
-            cm2.metric("Vol annuel", f"{mom_metrics['annual_vol']*100:.2f}%")
+            cm1.metric("Rendement annuel", f"{mom_metrics['annual_return'] * 100:.2f}%")
+            cm2.metric("Vol annuel", f"{mom_metrics['annual_vol'] * 100:.2f}%")
             cm3.metric("Sharpe", f"{mom_metrics['sharpe']:.2f}")
-            cm4.metric("Max drawdown", f"{mom_metrics['max_drawdown']*100:.2f}%")
+            cm4.metric("Max drawdown", f"{mom_metrics['max_drawdown'] * 100:.2f}%")
+
+            cm5, cm6, cm7, _ = st.columns(4)
+            cm5.metric("Calmar", f"{mom_metrics['calmar']:.2f}")
+            cm6.metric("Sortino", f"{mom_metrics['sortino']:.2f}")
+            cm7.metric("Rendement/jour", f"{mom_metrics['mean_daily'] * 100:.3f}%")

@@ -154,11 +154,19 @@ def single_asset_page():
             equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
 
         # ---------- GRAPHIQUE PRINCIPAL ----------
-        st.subheader("Évolution du prix et des stratégies")
+        st.subheader("Prix brut vs stratégie choisie")
 
-        df_plot = pd.concat([price_norm, equity_bh], axis=1)
-        if equity_mom is not None:
-            df_plot = pd.concat([df_plot, equity_mom], axis=1)
+        # Courbe 1 : prix brut
+        price_raw = prices.copy()
+        price_raw.name = "Prix brut"
+
+        # Courbe 2 : stratégie sélectionnée
+        if "Momentum" in strategy_name and equity_mom is not None:
+            equity_sel = equity_mom.rename("Stratégie Momentum")
+        else:
+            equity_sel = equity_bh.rename("Stratégie Buy & Hold")
+
+        df_plot = pd.concat([price_raw, equity_sel], axis=1)
 
         st.line_chart(df_plot)
 

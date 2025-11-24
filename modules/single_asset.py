@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 from services.data_loader import load_price_history
-import altair as alt
-
 
 # ---------- STRATÉGIES DE BACKTEST ----------
 
@@ -157,10 +155,10 @@ def single_asset_page():
         # ---------- GRAPHIQUE PRINCIPAL ----------
         st.subheader("Prix brut vs valeur cumulée de la stratégie")
 
-        # Courbe 1 : prix brut (non normalisé)
+        # Prix brut
         price_raw = prices.copy()
 
-        # Courbe 2 : stratégie sélectionnée (valeur cumulée)
+        # Stratégie sélectionnée (valeur cumulée)
         if "Momentum" in strategy_name and equity_mom is not None:
             equity_sel = equity_mom.copy()
             strat_label = "Stratégie Momentum"
@@ -168,65 +166,26 @@ def single_asset_page():
             equity_sel = equity_bh.copy()
             strat_label = "Stratégie Buy & Hold"
 
-        # S'assurer que ce sont bien des Series
+        # Sécurité : si jamais ce sont des DataFrame
         if isinstance(price_raw, pd.DataFrame):
-            price_raw = price_raw.iloc[0]
-
+            price_raw = price_raw.iloc[:, 0]
         if isinstance(equity_sel, pd.DataFrame):
-            equity_sel = equity_sel.iloc[0]
+            equity_sel = equity_sel.iloc[:, 0]
 
-        # Renommer proprement pour le chart
-        price_raw = price_raw.rename("price")
-        equity_sel = equity_sel.rename("strategy_value")
+        # On exprime la stratégie en 'valeur' comparable au prix :
+        # equity_sel commence à 1 -> on lui donne comme valeur initiale le prix initial
+        strategy_value = equity_sel * float(price_raw.iloc[0])
+        strategy_value.name = f"Valeur cumulée ({strat_label})"
 
-        df_plot = pd.concat([price_raw, equity_sel], axis=1).dropna()
+        price_raw.name = "Prix brut"
 
-        # Petit sanity check (tu peux enlever après)
-        # st.write(df_plot.tail())
+        # DataFrame final pour le graphe, index = dates
+        df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
 
-        # Préparation pour Altair
-        df_plot_reset = df_plot.reset_index()
-        first_col = df_plot_reset.columns[0]
-        df_plot_reset = df_plot_reset.rename(columns={first_col: "date"})
+        # Affichage : deux courbes sur le même graphe
+        st.line_chart(df_plot)
 
-        import altair as alt
-
-        price_line = (
-            alt.Chart(df_plot_reset)
-            .mark_line()
-            .encode(
-                x=alt.X("date:T", title="Date"),
-                y=alt.Y("price:Q", title="Prix brut"),
-                tooltip=["date:T", "price:Q"],
-            )
-        )
-
-        equity_line = (
-            alt.Chart(df_plot_reset)
-            .mark_line()
-            .encode(
-                x=alt.X("date:T", title="Date"),
-                y=alt.Y(
-                    "strategy_value:Q",
-                    title="Valeur cumulée de la stratégie",
-                    axis=alt.Axis(titleColor="red"),
-                ),
-                color=alt.value("red"),
-                tooltip=["date:T", "strategy_value:Q"],
-            )
-        )
-
-        chart = (
-            alt.layer(price_line, equity_line)
-            .resolve_scale(y="independent")
-            .properties(
-                width=900,
-                height=400,
-                title=f"Prix brut vs {strat_label}",
-            )
-        )
-
-        st.altair_chart(chart, use_container_width=True)
+        
         # ---------- MÉTRIQUES ----------
         st.subheader("Métriques")
 

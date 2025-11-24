@@ -170,9 +170,10 @@ def single_asset_page():
 
         # S'assurer que ce sont bien des Series
         if isinstance(price_raw, pd.DataFrame):
-            price_raw = price_raw.iloc[:, 0]
+            price_raw = price_raw.iloc[0]
+
         if isinstance(equity_sel, pd.DataFrame):
-            equity_sel = equity_sel.iloc[:, 0]
+            equity_sel = equity_sel.iloc[0]
 
         # Renommer proprement pour le chart
         price_raw = price_raw.rename("price")
@@ -180,8 +181,13 @@ def single_asset_page():
 
         df_plot = pd.concat([price_raw, equity_sel], axis=1).dropna()
 
+        # Petit sanity check (tu peux enlever après)
+        # st.write(df_plot.tail())
+
         # Préparation pour Altair
-        df_plot_reset = df_plot.reset_index().rename(columns={"index": "date"})
+        df_plot_reset = df_plot.reset_index()
+        first_col = df_plot_reset.columns[0]
+        df_plot_reset = df_plot_reset.rename(columns={first_col: "date"})
 
         import altair as alt
 
@@ -212,7 +218,7 @@ def single_asset_page():
 
         chart = (
             alt.layer(price_line, equity_line)
-            .resolve_scale(y="independent")  # deux axes Y indépendants
+            .resolve_scale(y="independent")
             .properties(
                 width=900,
                 height=400,
@@ -221,7 +227,6 @@ def single_asset_page():
         )
 
         st.altair_chart(chart, use_container_width=True)
-
         # ---------- MÉTRIQUES ----------
         st.subheader("Métriques")
 

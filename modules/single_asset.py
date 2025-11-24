@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from services.data_loader import load_price_history
+import altair as alt
 
 
 # ---------- STRATÉGIES DE BACKTEST ----------

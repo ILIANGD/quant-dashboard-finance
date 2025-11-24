@@ -1,39 +1,12 @@
-# --- Python ---
+# Python
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-*.egg-info/
-*.log
 
-# --- OS macOS ---
+# macOS (au cas où)
 .DS_Store
-.AppleDouble
-.LSOverride
 
-# --- IDE ---
-.idea/
-.vscode/
-
-# --- Virtual environments ---
+# Virtual env (si un jour tu en mets un)
 venv/
 env/
 .venv/
-
-# --- Streamlit ---
-.streamlit/
-
-# --- Jupyter (si jamais tu en utilises) ---
-.ipynb_checkpoints/
-
-# --- Local data files (optionnel) ---
-data/
-*.csv
-*.parquet
-
-# --- AWS / Deploy ---
-*.service
-scripts/*.sh
-
-# --- Cache divers ---
-*.cache

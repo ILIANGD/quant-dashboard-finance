@@ -162,19 +162,28 @@ def single_asset_page():
 
         # Courbe 2 : stratégie sélectionnée (valeur cumulée)
         if "Momentum" in strategy_name and equity_mom is not None:
-            equity_sel = equity_mom.rename("strategy_value")
+            equity_sel = equity_mom.copy()
             strat_label = "Stratégie Momentum"
         else:
-            equity_sel = equity_bh.rename("strategy_value")
+            equity_sel = equity_bh.copy()
             strat_label = "Stratégie Buy & Hold"
 
-        # DataFrame commun pour le chart
-        df_plot = pd.concat([price_raw, equity_sel], axis=1)
-        df_plot.columns = ["price", "strategy_value"]
-        df_plot = df_plot.dropna()
+        # S'assurer que ce sont bien des Series
+        if isinstance(price_raw, pd.DataFrame):
+            price_raw = price_raw.iloc[:, 0]
+        if isinstance(equity_sel, pd.DataFrame):
+            equity_sel = equity_sel.iloc[:, 0]
+
+        # Renommer proprement pour le chart
+        price_raw = price_raw.rename("price")
+        equity_sel = equity_sel.rename("strategy_value")
+
+        df_plot = pd.concat([price_raw, equity_sel], axis=1).dropna()
 
         # Préparation pour Altair
         df_plot_reset = df_plot.reset_index().rename(columns={"index": "date"})
+
+        import altair as alt
 
         price_line = (
             alt.Chart(df_plot_reset)
@@ -182,7 +191,7 @@ def single_asset_page():
             .encode(
                 x=alt.X("date:T", title="Date"),
                 y=alt.Y("price:Q", title="Prix brut"),
-                tooltip=["date:T", "price:Q"]
+                tooltip=["date:T", "price:Q"],
             )
         )
 
@@ -194,10 +203,10 @@ def single_asset_page():
                 y=alt.Y(
                     "strategy_value:Q",
                     title="Valeur cumulée de la stratégie",
-                    axis=alt.Axis(titleColor="red")
+                    axis=alt.Axis(titleColor="red"),
                 ),
                 color=alt.value("red"),
-                tooltip=["date:T", "strategy_value:Q"]
+                tooltip=["date:T", "strategy_value:Q"],
             )
         )
 
@@ -207,7 +216,7 @@ def single_asset_page():
             .properties(
                 width=900,
                 height=400,
-                title=f"Prix brut vs {strat_label}"
+                title=f"Prix brut vs {strat_label}",
             )
         )
 

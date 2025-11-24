@@ -155,21 +155,63 @@ def single_asset_page():
             equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
 
         # ---------- GRAPHIQUE PRINCIPAL ----------
-        st.subheader("Prix brut vs stratégie choisie")
+        st.subheader("Prix brut vs valeur cumulée de la stratégie")
 
-        # Courbe 1 : prix brut
+        # Courbe 1 : prix brut (non normalisé)
         price_raw = prices.copy()
-        price_raw.name = "Prix brut"
 
-        # Courbe 2 : stratégie sélectionnée
+        # Courbe 2 : stratégie sélectionnée (valeur cumulée)
         if "Momentum" in strategy_name and equity_mom is not None:
-            equity_sel = equity_mom.rename("Stratégie Momentum")
+            equity_sel = equity_mom.rename("strategy_value")
+            strat_label = "Stratégie Momentum"
         else:
-            equity_sel = equity_bh.rename("Stratégie Buy & Hold")
+            equity_sel = equity_bh.rename("strategy_value")
+            strat_label = "Stratégie Buy & Hold"
 
+        # DataFrame commun pour le chart
         df_plot = pd.concat([price_raw, equity_sel], axis=1)
+        df_plot.columns = ["price", "strategy_value"]
+        df_plot = df_plot.dropna()
 
-        st.line_chart(df_plot)
+        # Préparation pour Altair
+        df_plot_reset = df_plot.reset_index().rename(columns={"index": "date"})
+
+        price_line = (
+            alt.Chart(df_plot_reset)
+            .mark_line()
+            .encode(
+                x=alt.X("date:T", title="Date"),
+                y=alt.Y("price:Q", title="Prix brut"),
+                tooltip=["date:T", "price:Q"]
+            )
+        )
+
+        equity_line = (
+            alt.Chart(df_plot_reset)
+            .mark_line()
+            .encode(
+                x=alt.X("date:T", title="Date"),
+                y=alt.Y(
+                    "strategy_value:Q",
+                    title="Valeur cumulée de la stratégie",
+                    axis=alt.Axis(titleColor="red")
+                ),
+                color=alt.value("red"),
+                tooltip=["date:T", "strategy_value:Q"]
+            )
+        )
+
+        chart = (
+            alt.layer(price_line, equity_line)
+            .resolve_scale(y="independent")  # deux axes Y indépendants
+            .properties(
+                width=900,
+                height=400,
+                title=f"Prix brut vs {strat_label}"
+            )
+        )
+
+        st.altair_chart(chart, use_container_width=True)
 
         # ---------- MÉTRIQUES ----------
         st.subheader("Métriques")

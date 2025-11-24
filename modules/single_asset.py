@@ -90,6 +90,48 @@ def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
 
 # ---------- PAGE STREAMLIT ----------
 
+METRIC_TOOLTIPS = {
+    "Rendement annuel": (
+        "Rendement annualisé : rendement moyen par an, obtenu à partir des rendements "
+        "journaliers composés sur 252 jours de bourse."
+    ),
+    "Vol annuel": (
+        "Volatilité annualisée : écart-type des rendements journaliers, multiplié par "
+        "sqrt(252). Mesure l'amplitude moyenne des variations."
+    ),
+    "Sharpe": (
+        "Sharpe ratio : rendement annualisé (ici sans taux sans risque) divisé par la "
+        "volatilité annualisée. Mesure le rendement par unité de risque."
+    ),
+    "Max drawdown": (
+        "Max drawdown : plus forte baisse en pourcentage entre un plus-haut et le plus "
+        "bas suivant sur la courbe de capital."
+    ),
+    "Calmar": (
+        "Calmar ratio : rendement annualisé divisé par la valeur absolue du max drawdown. "
+        "Plus il est élevé, mieux c'est."
+    ),
+    "Sortino": (
+        "Sortino ratio : rendement annualisé divisé par la volatilité des rendements négatifs "
+        "(downside volatility). Pénalise seulement les baisses."
+    ),
+    "Rendement/jour": (
+        "Rendement moyen quotidien de la série (moyenne des rendements journaliers)."
+    ),
+}
+
+def metric_with_help(label: str, value_str: str):
+    tooltip = METRIC_TOOLTIPS.get(label, "")
+    html = (
+        f'<div title="{tooltip}">'
+        f'<strong>{label}</strong><br>'
+        f'<span style="font-size: 1.4em;">{value_str}</span>'
+        f'</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+
+
 def single_asset_page():
     st.title("Single Asset Analysis – Brent (BZ=F)")
 
@@ -194,42 +236,62 @@ def single_asset_page():
         mom_metrics = compute_metrics(equity_mom) if equity_mom is not None else None
 
         # ----- Actif -----
-        st.markdown("### Actif (Brent)")
+        st.markdown(f"### Actif ({ticker})")
         ca1, ca2, ca3, ca4 = st.columns(4)
-        ca1.metric("Rendement annuel", f"{asset_metrics['annual_return'] * 100:.2f}%")
-        ca2.metric("Vol annuel", f"{asset_metrics['annual_vol'] * 100:.2f}%")
-        ca3.metric("Sharpe", f"{asset_metrics['sharpe']:.2f}")
-        ca4.metric("Max drawdown", f"{asset_metrics['max_drawdown'] * 100:.2f}%")
+        with ca1:
+            metric_with_help("Rendement annuel", f"{asset_metrics['annual_return'] * 100:.2f}%")
+        with ca2:
+            metric_with_help("Vol annuel", f"{asset_metrics['annual_vol'] * 100:.2f}%")
+        with ca3:
+            metric_with_help("Sharpe", f"{asset_metrics['sharpe']:.2f}")
+        with ca4:
+            metric_with_help("Max drawdown", f"{asset_metrics['max_drawdown'] * 100:.2f}%")
 
         ca5, ca6, ca7, _ = st.columns(4)
-        ca5.metric("Calmar", f"{asset_metrics['calmar']:.2f}")
-        ca6.metric("Sortino", f"{asset_metrics['sortino']:.2f}")
-        ca7.metric("Rendement/jour", f"{asset_metrics['mean_daily'] * 100:.3f}%")
+        with ca5:
+            metric_with_help("Calmar", f"{asset_metrics['calmar']:.2f}")
+        with ca6:
+            metric_with_help("Sortino", f"{asset_metrics['sortino']:.2f}")
+        with ca7:
+            metric_with_help("Rendement/jour", f"{asset_metrics['mean_daily'] * 100:.3f}%")
 
         # ----- Stratégie Buy & Hold -----
         st.markdown("### Stratégie Buy & Hold")
         cb1, cb2, cb3, cb4 = st.columns(4)
-        cb1.metric("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
-        cb2.metric("Vol annuel", f"{bh_metrics['annual_vol'] * 100:.2f}%")
-        cb3.metric("Sharpe", f"{bh_metrics['sharpe']:.2f}")
-        cb4.metric("Max drawdown", f"{bh_metrics['max_drawdown'] * 100:.2f}%")
+        with cb1:
+            metric_with_help("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
+        with cb2:
+            metric_with_help("Vol annuel", f"{bh_metrics['annual_vol'] * 100:.2f}%")
+        with cb3:
+            metric_with_help("Sharpe", f"{bh_metrics['sharpe']:.2f}")
+        with cb4:
+            metric_with_help("Max drawdown", f"{bh_metrics['max_drawdown'] * 100:.2f}%")
 
         cb5, cb6, cb7, _ = st.columns(4)
-        cb5.metric("Calmar", f"{bh_metrics['calmar']:.2f}")
-        cb6.metric("Sortino", f"{bh_metrics['sortino']:.2f}")
-        cb7.metric("Rendement/jour", f"{bh_metrics['mean_daily'] * 100:.3f}%")
+        with cb5:
+            metric_with_help("Calmar", f"{bh_metrics['calmar']:.2f}")
+        with cb6:
+            metric_with_help("Sortino", f"{bh_metrics['sortino']:.2f}")
+        with cb7:
+            metric_with_help("Rendement/jour", f"{bh_metrics['mean_daily'] * 100:.3f}%")
 
         # ----- Stratégie Momentum (si présente) -----
         if mom_metrics is not None:
             st.markdown("### Stratégie Momentum")
-
             cm1, cm2, cm3, cm4 = st.columns(4)
-            cm1.metric("Rendement annuel", f"{mom_metrics['annual_return'] * 100:.2f}%")
-            cm2.metric("Vol annuel", f"{mom_metrics['annual_vol'] * 100:.2f}%")
-            cm3.metric("Sharpe", f"{mom_metrics['sharpe']:.2f}")
-            cm4.metric("Max drawdown", f"{mom_metrics['max_drawdown'] * 100:.2f}%")
+            with cm1:
+                metric_with_help("Rendement annuel", f"{mom_metrics['annual_return'] * 100:.2f}%")
+            with cm2:
+                metric_with_help("Vol annuel", f"{mom_metrics['annual_vol'] * 100:.2f}%")
+            with cm3:
+                metric_with_help("Sharpe", f"{mom_metrics['sharpe']:.2f}")
+            with cm4:
+                metric_with_help("Max drawdown", f"{mom_metrics['max_drawdown'] * 100:.2f}%")
 
             cm5, cm6, cm7, _ = st.columns(4)
-            cm5.metric("Calmar", f"{mom_metrics['calmar']:.2f}")
-            cm6.metric("Sortino", f"{mom_metrics['sortino']:.2f}")
-            cm7.metric("Rendement/jour", f"{mom_metrics['mean_daily'] * 100:.3f}%")
+            with cm5:
+                metric_with_help("Calmar", f"{mom_metrics['calmar']:.2f}")
+            with cm6:
+                metric_with_help("Sortino", f"{mom_metrics['sortino']:.2f}")
+            with cm7:
+                metric_with_help("Rendement/jour", f"{mom_metrics['mean_daily'] * 100:.3f}%")

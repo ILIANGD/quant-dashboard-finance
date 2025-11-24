@@ -1,3 +1,39 @@
-# Default ignored files
-/shelf/
-/workspace.xml
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.log
+
+# --- OS macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# --- IDE ---
+.idea/
+.vscode/
+
+# --- Virtual environments ---
+venv/
+env/
+.venv/
+
+# --- Streamlit ---
+.streamlit/
+
+# --- Jupyter (si jamais tu en utilises) ---
+.ipynb_checkpoints/
+
+# --- Local data files (optionnel) ---
+data/
+*.csv
+*.parquet
+
+# --- AWS / Deploy ---
+*.service
+scripts/*.sh
+
+# --- Cache divers ---
+*.cache

@@ -122,32 +122,15 @@ METRIC_TOOLTIPS = {
 
 def metric_with_help(label: str, value_str: str):
     tooltip = METRIC_TOOLTIPS.get(label, "")
-    html = f"""
-    <div>
-      <span style="display: flex; align-items: center; gap: 6px;">
-        <strong>{label}</strong>
-        <span
-          title="{tooltip}"
-          style="
-            cursor: help;
-            color: #aaa;
-            font-size: 0.75em;
-            border-radius: 50%;
-            border: 1px solid #666;
-            width: 16px;
-            height: 16px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-          "
-        >i</span>
-      </span>
-      <span style="font-size: 1.4em;">
-        {value_str}
-      </span>
-    </div>
-    """
-    st.markdown(html, unsafe_allow_html=True)
+
+    # Affiche le label AVEC le petit (i) automatique de Streamlit
+    st.caption(f"**{label}**", help=tooltip)
+
+    # Affiche la valeur juste en dessous
+    st.markdown(
+        f"<div style='font-size:1.4em; font-weight:600;'>{value_str}</div>",
+        unsafe_allow_html=True
+    )
 
 
 

@@ -145,6 +145,7 @@ METRIC_TOOLTIPS = {
     ),
 }
 
+
 def metric_with_help(label: str, value_str: str):
     tooltip = METRIC_TOOLTIPS.get(label, "")
 
@@ -154,9 +155,8 @@ def metric_with_help(label: str, value_str: str):
     # Affiche la valeur juste en dessous
     st.markdown(
         f"<div style='font-size:1.4em; font-weight:600;'>{value_str}</div>",
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
-
 
 
 def single_asset_page():
@@ -232,43 +232,43 @@ def single_asset_page():
 
     # Stratégies
     equity_bh = backtest_buy_hold(prices)
-        equity_mom = None
-        if "Momentum" in strategy_name:
-            equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
+    equity_mom = None
+    if "Momentum" in strategy_name:
+        equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
 
-        # ---------- GRAPHIQUE PRINCIPAL ----------
-        # Choix de la stratégie affichée
-        if "Momentum" in strategy_name and equity_mom is not None:
-            equity_sel = equity_mom.copy()
-            strat_label = "Stratégie Momentum"
-        else:
-            equity_sel = equity_bh.copy()
-            strat_label = "Stratégie Buy & Hold"
+    # ---------- GRAPHIQUE PRINCIPAL ----------
+    # Choix de la stratégie affichée
+    if "Momentum" in strategy_name and equity_mom is not None:
+        equity_sel = equity_mom.copy()
+        strat_label = "Stratégie Momentum"
+    else:
+        equity_sel = equity_bh.copy()
+        strat_label = "Stratégie Buy & Hold"
 
-        st.subheader(f"Prix brut vs {strat_label}")
+    st.subheader(f"Prix brut vs {strat_label}")
 
-        # Prix brut
-        price_raw = prices.copy()
+    # Prix brut
+    price_raw = prices.copy()
 
-        # Sécurité : si jamais ce sont des DataFrame
-        if isinstance(price_raw, pd.DataFrame):
-            price_raw = price_raw.iloc[:, 0]
-        if isinstance(equity_sel, pd.DataFrame):
-            equity_sel = equity_sel.iloc[:, 0]
+    # Sécurité : si jamais ce sont des DataFrame
+    if isinstance(price_raw, pd.DataFrame):
+        price_raw = price_raw.iloc[:, 0]
+    if isinstance(equity_sel, pd.DataFrame):
+        equity_sel = equity_sel.iloc[:, 0]
 
-        # On exprime la stratégie en 'valeur' comparable au prix :
-        # equity_sel commence à 1 -> on lui donne comme valeur initiale le prix initial
-        strategy_value = equity_sel * float(price_raw.iloc[0])
+    # On exprime la stratégie en 'valeur' comparable au prix :
+    # equity_sel commence à 1 -> on lui donne comme valeur initiale le prix initial
+    strategy_value = equity_sel * float(price_raw.iloc[0])
 
-        # Noms des séries pour la légende du graphe
-        price_raw.name = "Prix brut"
-        strategy_value.name = strat_label   # <-- juste le nom de la stratégie
+    # Noms des séries pour la légende du graphe
+    price_raw.name = "Prix brut"
+    strategy_value.name = strat_label
 
-        # DataFrame final pour le graphe, index = dates
-        df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
+    # DataFrame final pour le graphe, index = dates
+    df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
 
-        # Affichage : deux courbes sur le même graphe
-        st.line_chart(df_plot)
+    # Affichage : deux courbes sur le même graphe
+    st.line_chart(df_plot)
 
     # ---------- MÉTRIQUES ----------
     st.subheader("Métriques")

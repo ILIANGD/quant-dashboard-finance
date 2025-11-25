@@ -163,7 +163,7 @@ def single_asset_page():
     st.title("Single Asset Analysis – Brent (BZ=F)")
 
     # Refresh automatique toutes les 5 minutes (300 000 ms)
-    st_autorefresh(interval=300_000, limit=None, key="5min_refresh")
+    st_autorefresh(interval=300_000, key="auto_refresh_5min")
 
     # ---- Contrôles interactifs (ticker, période, périodicité, stratégie) ----
     col1, col2, col3, col4 = st.columns(4)
@@ -189,14 +189,12 @@ def single_asset_page():
     with col4:
         strategy_name = st.selectbox(
             "Stratégie",
-            ["Buy & Hold", "Momentum (MA rapide / MA lente)", "Breakout (plus haut N jours)", ],
+            ["Buy & Hold", "Momentum (MA rapide / MA lente)"],
             index=0,
         )
 
-    # ---- Paramètres de stratégie ----
+    # ---- Paramètres de stratégie (Momentum) ----
     fast, slow = 20, 50
-    lookback_breakout = 50
-
     if "Momentum" in strategy_name:
         c_fast, c_slow = st.columns(2)
         with c_fast:
@@ -205,7 +203,7 @@ def single_asset_page():
                 min_value=5,
                 max_value=50,
                 value=20,
-                step=1
+                step=1,
             )
         with c_slow:
             slow = st.slider(
@@ -213,143 +211,128 @@ def single_asset_page():
                 min_value=20,
                 max_value=200,
                 value=50,
-                step=1
+                step=1,
             )
-
         if slow <= fast:
             st.warning("La MA lente doit être strictement plus grande que la MA rapide.")
             return
 
-    elif "Breakout" in strategy_name:
-        lookback_breakout = st.slider(
-            "Lookback Breakout (jours)",
-            min_value=10,
-            max_value=200,
-            value=50,
-            step=5
-        )
+    # ---- Backtest automatique (plus de bouton) ----
 
-    # ---- Lancement du backtest ----
-    if st.button("Lancer le backtest"):
-        data = load_price_history(ticker, period=period, interval=interval)
-        if data.empty:
-            st.error("Impossible de charger les données pour ce ticker.")
-            return
+    # Chargement des données
+    data = load_price_history(ticker, period=period, interval=interval)
+    if data.empty:
+        st.error("Impossible de charger les données pour ce ticker.")
+        return
 
-        prices = data["price"].dropna()
+    prices = data["price"].dropna()
+    if prices.empty:
+        st.error("Pas de données de prix exploitables pour ce ticker.")
+        return
 
-        # Prix normalisé pour comparaison (1 au départ)
-        price_norm = prices / prices.iloc[0]
-        price_norm.name = "Prix normalisé"
+    # Stratégies
+    equity_bh = backtest_buy_hold(prices)
+    equity_mom = None
+    if "Momentum" in strategy_name:
+        equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
 
-        # Stratégies
-        equity_bh = backtest_buy_hold(prices)
-        equity_mom = None
-        equity_break = None
-        
-        if "Momentum" in strategy_name:
-            equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
-        if "Breakout" in strategy_name:
-            equity_break = backtest_breakout(prices, lookback=lookback_breakout)
+    # ---------- GRAPHIQUE PRINCIPAL ----------
+    st.subheader("Prix brut vs valeur cumulée de la stratégie")
 
-        # ---------- GRAPHIQUE PRINCIPAL ----------
-        st.subheader("Prix brut vs valeur cumulée de la stratégie")
+    # Prix brut
+    price_raw = prices.copy()
 
-        # Prix brut
-        price_raw = prices.copy()
+    # Stratégie sélectionnée (valeur cumulée)
+    if "Momentum" in strategy_name and equity_mom is not None:
+        equity_sel = equity_mom.copy()
+        strat_label = "Stratégie Momentum"
+    else:
+        equity_sel = equity_bh.copy()
+        strat_label = "Stratégie Buy & Hold"
 
-        # Stratégie sélectionnée (valeur cumulée)
-        if "Momentum" in strategy_name and equity_mom is not None:
-            equity_sel = equity_mom.copy()
-            strat_label = "Stratégie Momentum"
-        else:
-            equity_sel = equity_bh.copy()
-            strat_label = "Stratégie Buy & Hold"
+    # Sécurité : si jamais ce sont des DataFrame
+    if isinstance(price_raw, pd.DataFrame):
+        price_raw = price_raw.iloc[:, 0]
+    if isinstance(equity_sel, pd.DataFrame):
+        equity_sel = equity_sel.iloc[:, 0]
 
-        # Sécurité : si jamais ce sont des DataFrame
-        if isinstance(price_raw, pd.DataFrame):
-            price_raw = price_raw.iloc[:, 0]
-        if isinstance(equity_sel, pd.DataFrame):
-            equity_sel = equity_sel.iloc[:, 0]
+    # On exprime la stratégie en 'valeur' comparable au prix :
+    # equity_sel commence à 1 -> on lui donne comme valeur initiale le prix initial
+    strategy_value = equity_sel * float(price_raw.iloc[0])
+    strategy_value.name = f"Valeur cumulée ({strat_label})"
 
-        # On exprime la stratégie en 'valeur' comparable au prix :
-        # equity_sel commence à 1 -> on lui donne comme valeur initiale le prix initial
-        strategy_value = equity_sel * float(price_raw.iloc[0])
-        strategy_value.name = f"Valeur cumulée ({strat_label})"
+    price_raw.name = "Prix brut"
 
-        price_raw.name = "Prix brut"
+    # DataFrame final pour le graphe, index = dates
+    df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
 
-        # DataFrame final pour le graphe, index = dates
-        df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
+    # Affichage : deux courbes sur le même graphe
+    st.line_chart(df_plot)
 
-        # Affichage : deux courbes sur le même graphe
-        st.line_chart(df_plot)
+    # ---------- MÉTRIQUES ----------
+    st.subheader("Métriques")
 
-        
-        # ---------- MÉTRIQUES ----------
-        st.subheader("Métriques")
+    asset_metrics = compute_metrics(prices)
+    bh_metrics = compute_metrics(equity_bh)
+    mom_metrics = compute_metrics(equity_mom) if equity_mom is not None else None
 
-        asset_metrics = compute_metrics(prices)
-        bh_metrics = compute_metrics(equity_bh)
-        mom_metrics = compute_metrics(equity_mom) if equity_mom is not None else None
+    # ----- Actif -----
+    st.markdown(f"### Actif ({ticker})")
+    ca1, ca2, ca3, ca4 = st.columns(4)
+    with ca1:
+        metric_with_help("Rendement annuel", f"{asset_metrics['annual_return'] * 100:.2f}%")
+    with ca2:
+        metric_with_help("Vol annuel", f"{asset_metrics['annual_vol'] * 100:.2f}%")
+    with ca3:
+        metric_with_help("Sharpe", f"{asset_metrics['sharpe']:.2f}")
+    with ca4:
+        metric_with_help("Max drawdown", f"{asset_metrics['max_drawdown'] * 100:.2f}%")
 
-        # ----- Actif -----
-        st.markdown(f"### Actif ({ticker})")
-        ca1, ca2, ca3, ca4 = st.columns(4)
-        with ca1:
-            metric_with_help("Rendement annuel", f"{asset_metrics['annual_return'] * 100:.2f}%")
-        with ca2:
-            metric_with_help("Vol annuel", f"{asset_metrics['annual_vol'] * 100:.2f}%")
-        with ca3:
-            metric_with_help("Sharpe", f"{asset_metrics['sharpe']:.2f}")
-        with ca4:
-            metric_with_help("Max drawdown", f"{asset_metrics['max_drawdown'] * 100:.2f}%")
+    ca5, ca6, ca7, _ = st.columns(4)
+    with ca5:
+        metric_with_help("Calmar", f"{asset_metrics['calmar']:.2f}")
+    with ca6:
+        metric_with_help("Sortino", f"{asset_metrics['sortino']:.2f}")
+    with ca7:
+        metric_with_help("Rendement/jour", f"{asset_metrics['mean_daily'] * 100:.3f}%")
 
-        ca5, ca6, ca7, _ = st.columns(4)
-        with ca5:
-            metric_with_help("Calmar", f"{asset_metrics['calmar']:.2f}")
-        with ca6:
-            metric_with_help("Sortino", f"{asset_metrics['sortino']:.2f}")
-        with ca7:
-            metric_with_help("Rendement/jour", f"{asset_metrics['mean_daily'] * 100:.3f}%")
+    # ----- Stratégie Buy & Hold -----
+    st.markdown("### Stratégie Buy & Hold")
+    cb1, cb2, cb3, cb4 = st.columns(4)
+    with cb1:
+        metric_with_help("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
+    with cb2:
+        metric_with_help("Vol annuel", f"{bh_metrics['annual_vol'] * 100:.2f}%")
+    with cb3:
+        metric_with_help("Sharpe", f"{bh_metrics['sharpe']:.2f}")
+    with cb4:
+        metric_with_help("Max drawdown", f"{bh_metrics['max_drawdown'] * 100:.2f}%")
 
-        # ----- Stratégie Buy & Hold -----
-        st.markdown("### Stratégie Buy & Hold")
-        cb1, cb2, cb3, cb4 = st.columns(4)
-        with cb1:
-            metric_with_help("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
-        with cb2:
-            metric_with_help("Vol annuel", f"{bh_metrics['annual_vol'] * 100:.2f}%")
-        with cb3:
-            metric_with_help("Sharpe", f"{bh_metrics['sharpe']:.2f}")
-        with cb4:
-            metric_with_help("Max drawdown", f"{bh_metrics['max_drawdown'] * 100:.2f}%")
+    cb5, cb6, cb7, _ = st.columns(4)
+    with cb5:
+        metric_with_help("Calmar", f"{bh_metrics['calmar']:.2f}")
+    with cb6:
+        metric_with_help("Sortino", f"{bh_metrics['sortino']:.2f}")
+    with cb7:
+        metric_with_help("Rendement/jour", f"{bh_metrics['mean_daily'] * 100:.3f}%")
 
-        cb5, cb6, cb7, _ = st.columns(4)
-        with cb5:
-            metric_with_help("Calmar", f"{bh_metrics['calmar']:.2f}")
-        with cb6:
-            metric_with_help("Sortino", f"{bh_metrics['sortino']:.2f}")
-        with cb7:
-            metric_with_help("Rendement/jour", f"{bh_metrics['mean_daily'] * 100:.3f}%")
+    # ----- Stratégie Momentum (si présente) -----
+    if mom_metrics is not None:
+        st.markdown("### Stratégie Momentum")
+        cm1, cm2, cm3, cm4 = st.columns(4)
+        with cm1:
+            metric_with_help("Rendement annuel", f"{mom_metrics['annual_return'] * 100:.2f}%")
+        with cm2:
+            metric_with_help("Vol annuel", f"{mom_metrics['annual_vol'] * 100:.2f}%")
+        with cm3:
+            metric_with_help("Sharpe", f"{mom_metrics['sharpe']:.2f}")
+        with cm4:
+            metric_with_help("Max drawdown", f"{mom_metrics['max_drawdown'] * 100:.2f}%")
 
-        # ----- Stratégie Momentum (si présente) -----
-        if mom_metrics is not None:
-            st.markdown("### Stratégie Momentum")
-            cm1, cm2, cm3, cm4 = st.columns(4)
-            with cm1:
-                metric_with_help("Rendement annuel", f"{mom_metrics['annual_return'] * 100:.2f}%")
-            with cm2:
-                metric_with_help("Vol annuel", f"{mom_metrics['annual_vol'] * 100:.2f}%")
-            with cm3:
-                metric_with_help("Sharpe", f"{mom_metrics['sharpe']:.2f}")
-            with cm4:
-                metric_with_help("Max drawdown", f"{mom_metrics['max_drawdown'] * 100:.2f}%")
-
-            cm5, cm6, cm7, _ = st.columns(4)
-            with cm5:
-                metric_with_help("Calmar", f"{mom_metrics['calmar']:.2f}")
-            with cm6:
-                metric_with_help("Sortino", f"{mom_metrics['sortino']:.2f}")
-            with cm7:
-                metric_with_help("Rendement/jour", f"{mom_metrics['mean_daily'] * 100:.3f}%")
+        cm5, cm6, cm7, _ = st.columns(4)
+        with cm5:
+            metric_with_help("Calmar", f"{mom_metrics['calmar']:.2f}")
+        with cm6:
+            metric_with_help("Sortino", f"{mom_metrics['sortino']:.2f}")
+        with cm7:
+            metric_with_help("Rendement/jour", f"{mom_metrics['mean_daily'] * 100:.3f}%")

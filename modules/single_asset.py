@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from services.data_loader import load_price_history
+from streamlit_autorefresh import st_autorefresh
 
 # ---------- STRATÉGIES DE BACKTEST ----------
 
@@ -160,6 +161,9 @@ def metric_with_help(label: str, value_str: str):
 
 def single_asset_page():
     st.title("Single Asset Analysis – Brent (BZ=F)")
+
+    # Refresh automatique toutes les 5 minutes (300 000 ms)
+    st_autorefresh(interval=300_000, limit=None, key="5min_refresh")
 
     # ---- Contrôles interactifs (ticker, période, périodicité, stratégie) ----
     col1, col2, col3, col4 = st.columns(4)

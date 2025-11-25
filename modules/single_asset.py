@@ -37,6 +37,30 @@ def backtest_momentum_ma(prices: pd.Series, fast: int = 20, slow: int = 50) -> p
     return equity
 
 
+def backtest_breakout(prices: pd.Series, lookback: int = 50) -> pd.Series:
+    """
+    Stratégie Breakout N jours :
+    - Long si le prix dépasse le plus haut des N derniers jours
+    - Sinon, cash
+    """
+    prices = prices.dropna()
+    rets = prices.pct_change().dropna()
+
+    # Plus haut sur les N derniers jours (hors jour courant)
+    rolling_high = prices.shift(1).rolling(lookback).max()
+
+    # Signal : 1 si prix du jour > plus haut N jours précédent, sinon 0
+    signal = (prices > rolling_high).astype(int)
+
+    # Position du jour = signal de la veille (pour éviter le look-ahead)
+    position = signal.shift(1).reindex(rets.index).fillna(0)
+
+    strat_rets = position * rets
+    equity = (1 + strat_rets).cumprod()
+    equity.name = f"Breakout_{lookback}j"
+    return equity
+
+
 # ---------- MÉTRIQUES ----------
 
 def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
@@ -161,21 +185,45 @@ def single_asset_page():
     with col4:
         strategy_name = st.selectbox(
             "Stratégie",
-            ["Buy & Hold", "Momentum (MA rapide / MA lente)"],
+            ["Buy & Hold", "Momentum (MA rapide / MA lente)", "Breakout (plus haut N jours)", ],
             index=0,
         )
 
-    # Paramètres de stratégie (Momentum)
+    # ---- Paramètres de stratégie ----
     fast, slow = 20, 50
+    lookback_breakout = 50
+
     if "Momentum" in strategy_name:
         c_fast, c_slow = st.columns(2)
         with c_fast:
-            fast = st.slider("MA rapide (jours)", min_value=5, max_value=50, value=20, step=1)
+            fast = st.slider(
+                "MA rapide (jours)",
+                min_value=5,
+                max_value=50,
+                value=20,
+                step=1
+            )
         with c_slow:
-            slow = st.slider("MA lente (jours)", min_value=20, max_value=200, value=50, step=1)
+            slow = st.slider(
+                "MA lente (jours)",
+                min_value=20,
+                max_value=200,
+                value=50,
+                step=1
+            )
+
         if slow <= fast:
             st.warning("La MA lente doit être strictement plus grande que la MA rapide.")
             return
+
+    elif "Breakout" in strategy_name:
+        lookback_breakout = st.slider(
+            "Lookback Breakout (jours)",
+            min_value=10,
+            max_value=200,
+            value=50,
+            step=5
+        )
 
     # ---- Lancement du backtest ----
     if st.button("Lancer le backtest"):
@@ -193,8 +241,12 @@ def single_asset_page():
         # Stratégies
         equity_bh = backtest_buy_hold(prices)
         equity_mom = None
+        equity_break = None
+        
         if "Momentum" in strategy_name:
             equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
+        if "Breakout" in strategy_name:
+            equity_break = backtest_breakout(prices, lookback=lookback_breakout)
 
         # ---------- GRAPHIQUE PRINCIPAL ----------
         st.subheader("Prix brut vs valeur cumulée de la stratégie")

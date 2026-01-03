@@ -173,14 +173,14 @@ def single_asset_page():
 
     with col2:
         period = st.selectbox(
-            "Historique",
+            "Lookback period",
             ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
             index=3,
         )
 
     with col3:
         interval = st.selectbox(
-            "Périodicité",
+            "Frequency",
             ["1d", "1wk", "1mo"],
             index=0,
             help="1d = daily, 1wk = weekly, 1mo = monthly",
@@ -188,11 +188,11 @@ def single_asset_page():
 
     with col4:
         strategy_name = st.selectbox(
-            "Stratégie",
-            ["Buy & Hold", "Momentum (MA rapide / MA lente)"],
+            "Strategy",
+            ["Buy & Hold", "Momentum (Fast MA / Slow MA)"],
             index=0,
         )
-
+        
     # ---- Paramètres de stratégie (Momentum) ----
     fast, slow = 20, 50
     if "Momentum" in strategy_name:

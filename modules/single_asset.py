@@ -58,7 +58,7 @@ def backtest_breakout(prices: pd.Series, lookback: int = 50) -> pd.Series:
 
     strat_rets = position * rets
     equity = (1 + strat_rets).cumprod()
-    equity.name = f"Breakout_{lookback}j"
+    equity.name = f"Breakout_{lookback}d"
     return equity
 
 
@@ -116,32 +116,26 @@ def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
 # ---------- PAGE STREAMLIT ----------
 
 METRIC_TOOLTIPS = {
-    "Rendement annuel": (
-        "Rendement annualisé : rendement moyen par an, obtenu à partir des rendements "
-        "journaliers composés sur 252 jours de bourse."
+    "Annual return": (
+        "Annualized return computed from daily compounded returns over 252 trading days."
     ),
-    "Vol annuel": (
-        "Volatilité annualisée : écart-type des rendements journaliers, multiplié par "
-        "sqrt(252). Mesure l'amplitude moyenne des variations."
+    "Annual volatility": (
+        "Annualized volatility: standard deviation of daily returns multiplied by sqrt(252)."
     ),
     "Sharpe": (
-        "Sharpe ratio : rendement annualisé (ici sans taux sans risque) divisé par la "
-        "volatilité annualisée. Mesure le rendement par unité de risque."
+        "Sharpe ratio (risk-free rate assumed 0 here): annual return divided by annual volatility."
     ),
     "Max drawdown": (
-        "Max drawdown : plus forte baisse en pourcentage entre un plus-haut et le plus "
-        "bas suivant sur la courbe de capital."
+        "Maximum drawdown: largest peak-to-trough decline (in %) of the equity curve."
     ),
     "Calmar": (
-        "Calmar ratio : rendement annualisé divisé par la valeur absolue du max drawdown. "
-        "Plus il est élevé, mieux c'est."
+        "Calmar ratio: annual return divided by the absolute value of max drawdown."
     ),
     "Sortino": (
-        "Sortino ratio : rendement annualisé divisé par la volatilité des rendements négatifs "
-        "(downside volatility). Pénalise seulement les baisses."
+        "Sortino ratio: annual return divided by downside volatility (only negative returns)."
     ),
-    "Rendement/jour": (
-        "Rendement moyen quotidien de la série (moyenne des rendements journaliers)."
+    "Daily mean return": (
+        "Average daily return (mean of daily returns)."
     ),
 }
 
@@ -198,23 +192,11 @@ def single_asset_page():
     if "Momentum" in strategy_name:
         c_fast, c_slow = st.columns(2)
         with c_fast:
-            fast = st.slider(
-                "MA rapide (jours)",
-                min_value=5,
-                max_value=50,
-                value=20,
-                step=1,
-            )
+            fast = st.slider("Fast MA window (days)", min_value=5, max_value=50, value=20, step=1)
         with c_slow:
-            slow = st.slider(
-                "MA lente (jours)",
-                min_value=20,
-                max_value=200,
-                value=50,
-                step=1,
-            )
+            slow = st.slider("Slow MA window (days)", min_value=20, max_value=200, value=50, step=1)
         if slow <= fast:
-            st.warning("La MA lente doit être strictement plus grande que la MA rapide.")
+            st.warning("Slow MA window must be strictly greater than fast MA window.")
             return
 
     # ---- Backtest automatique (plus de bouton) ----
@@ -240,12 +222,12 @@ def single_asset_page():
     # Choix de la stratégie affichée
     if "Momentum" in strategy_name and equity_mom is not None:
         equity_sel = equity_mom.copy()
-        strat_label = "Stratégie Momentum"
+        strat_label = "Momentum Strategy"
     else:
         equity_sel = equity_bh.copy()
-        strat_label = "Stratégie Buy & Hold"
+        strat_label = "Buy & Hold Strategy"
 
-    st.subheader(f"Prix brut vs {strat_label}")
+    st.subheader(f"Raw price vs {strat_label}")
 
     # Prix brut
     price_raw = prices.copy()
@@ -261,7 +243,7 @@ def single_asset_page():
     strategy_value = equity_sel * float(price_raw.iloc[0])
 
     # Noms des séries pour la légende du graphe
-    price_raw.name = "Prix brut"
+    price_raw.name = "Raw price"
     strategy_value.name = strat_label
 
     # DataFrame final pour le graphe, index = dates
@@ -271,19 +253,19 @@ def single_asset_page():
     st.line_chart(df_plot)
 
     # ---------- MÉTRIQUES ----------
-    st.subheader("Métriques")
+    st.subheader("Performance metrics")
 
     asset_metrics = compute_metrics(prices)
     bh_metrics = compute_metrics(equity_bh)
     mom_metrics = compute_metrics(equity_mom) if equity_mom is not None else None
 
     # ----- Actif -----
-    st.markdown(f"### Actif ({ticker})")
+    st.markdown(f"### Asset ({ticker})")
     ca1, ca2, ca3, ca4 = st.columns(4)
     with ca1:
-        metric_with_help("Rendement annuel", f"{asset_metrics['annual_return'] * 100:.2f}%")
+        metric_with_help("Annual return", f"{asset_metrics['annual_return'] * 100:.2f}%")
     with ca2:
-        metric_with_help("Vol annuel", f"{asset_metrics['annual_vol'] * 100:.2f}%")
+        metric_with_help("Annual volatility", f"{asset_metrics['annual_vol'] * 100:.2f}%")
     with ca3:
         metric_with_help("Sharpe", f"{asset_metrics['sharpe']:.2f}")
     with ca4:
@@ -295,10 +277,10 @@ def single_asset_page():
     with ca6:
         metric_with_help("Sortino", f"{asset_metrics['sortino']:.2f}")
     with ca7:
-        metric_with_help("Rendement/jour", f"{asset_metrics['mean_daily'] * 100:.3f}%")
+        metric_with_help("Daily mean return", f"{asset_metrics['mean_daily'] * 100:.3f}%")
 
     # ----- Stratégie Buy & Hold -----
-    st.markdown("### Stratégie Buy & Hold")
+    st.markdown("### Buy & Hold Strategy")
     cb1, cb2, cb3, cb4 = st.columns(4)
     with cb1:
         metric_with_help("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
@@ -319,7 +301,7 @@ def single_asset_page():
 
     # ----- Stratégie Momentum (si présente) -----
     if mom_metrics is not None:
-        st.markdown("### Stratégie Momentum")
+        st.markdown("### Momentum Strategy")
         cm1, cm2, cm3, cm4 = st.columns(4)
         with cm1:
             metric_with_help("Rendement annuel", f"{mom_metrics['annual_return'] * 100:.2f}%")

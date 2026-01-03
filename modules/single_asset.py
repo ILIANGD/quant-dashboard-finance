@@ -195,7 +195,7 @@ def single_asset_page():
     
     c1, c2 = st.columns(2)
     with c1:
-        st.metric("Current price", "N/A" if quote["last_price"] is None else f"{quote['last_price']:.2f}")
+        st.metric("Current price", f"{quote['last_price']:.2f} USD")
     with c2:
         st.caption(f"Last update: {quote['asof_utc']}")
         
@@ -260,7 +260,7 @@ def single_asset_page():
         equity_sel = equity_bh.copy()
         strat_label = "Buy & Hold Strategy"
 
-    st.subheader(f"Raw price vs {strat_label}")
+    st.subheader(f"Raw price (USD) vs {strat_label}")
 
     # Raw price
     price_raw = prices.copy()

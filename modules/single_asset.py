@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-from services.data_loader import load_price_history
 from streamlit_autorefresh import st_autorefresh
 from services.data_loader import load_price_history, load_live_quote
 
@@ -218,12 +217,12 @@ def single_asset_page():
     # Chargement des données
     data = load_price_history(ticker, period=period, interval=interval)
     if data.empty:
-        st.error("Impossible de charger les données pour ce ticker.")
+        st.error("Failed to load data for this ticker.")
         return
 
     prices = data["price"].dropna()
     if prices.empty:
-        st.error("Pas de données de prix exploitables pour ce ticker.")
+        st.error("No usable price data for this ticker.")
         return
 
     # Stratégies
@@ -297,9 +296,9 @@ def single_asset_page():
     st.markdown("### Buy & Hold Strategy")
     cb1, cb2, cb3, cb4 = st.columns(4)
     with cb1:
-        metric_with_help("Rendement annuel", f"{bh_metrics['annual_return'] * 100:.2f}%")
+        metric_with_help("Annual return", f"{bh_metrics['annual_return'] * 100:.2f}%")
     with cb2:
-        metric_with_help("Vol annuel", f"{bh_metrics['annual_vol'] * 100:.2f}%")
+        metric_with_help("Annual volatility", f"{bh_metrics['annual_vol'] * 100:.2f}%")
     with cb3:
         metric_with_help("Sharpe", f"{bh_metrics['sharpe']:.2f}")
     with cb4:
@@ -311,16 +310,16 @@ def single_asset_page():
     with cb6:
         metric_with_help("Sortino", f"{bh_metrics['sortino']:.2f}")
     with cb7:
-        metric_with_help("Rendement/jour", f"{bh_metrics['mean_daily'] * 100:.3f}%")
+        metric_with_help("Daily mean return", f"{bh_metrics['mean_daily'] * 100:.3f}%")
 
     # ----- Stratégie Momentum (si présente) -----
     if mom_metrics is not None:
         st.markdown("### Momentum Strategy")
         cm1, cm2, cm3, cm4 = st.columns(4)
         with cm1:
-            metric_with_help("Rendement annuel", f"{mom_metrics['annual_return'] * 100:.2f}%")
+            metric_with_help("Annual return", f"{mom_metrics['annual_return'] * 100:.2f}%")
         with cm2:
-            metric_with_help("Vol annuel", f"{mom_metrics['annual_vol'] * 100:.2f}%")
+            metric_with_help("Annual volatility", f"{mom_metrics['annual_vol'] * 100:.2f}%")
         with cm3:
             metric_with_help("Sharpe", f"{mom_metrics['sharpe']:.2f}")
         with cm4:
@@ -332,4 +331,4 @@ def single_asset_page():
         with cm6:
             metric_with_help("Sortino", f"{mom_metrics['sortino']:.2f}")
         with cm7:
-            metric_with_help("Rendement/jour", f"{mom_metrics['mean_daily'] * 100:.3f}%")
+            metric_with_help("Daily mean return", f"{mom_metrics['mean_daily'] * 100:.3f}%")

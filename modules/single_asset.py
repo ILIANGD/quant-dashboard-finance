@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from services.data_loader import load_price_history
 from streamlit_autorefresh import st_autorefresh
+from services.data_loader import load_price_history, load_live_quote
 
 # ---------- STRATÉGIES DE BACKTEST ----------
 
@@ -186,6 +187,19 @@ def single_asset_page():
             ["Buy & Hold", "Momentum (Fast MA / Slow MA)"],
             index=0,
         )
+
+
+    quote = load_live_quote(ticker)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        if quote["last_price"] is None:
+            st.metric("Current price", "N/A")
+        else:
+            st.metric("Current price", f"{quote['last_price']:.2f}")
+    
+    with c2:
+        st.caption(f"Last update: {quote['asof_utc']}")
         
     # ---- Paramètres de stratégie (Momentum) ----
     fast, slow = 20, 50

@@ -183,7 +183,7 @@ def single_asset_page():
     with col4:
         strategy_name = st.selectbox(
             "Strategy",
-            ["Buy & Hold", "Momentum (Fast MA / Slow MA)"],
+            ["Buy & Hold", "Momentum (Fast MA / Slow MA)", "Breakout (N-day high)"],
             index=0,
         )
 
@@ -212,9 +212,21 @@ def single_asset_page():
             st.warning("Slow MA window must be strictly greater than fast MA window.")
             return
 
+
+    lookback = 50
+    if "Breakout" in strategy_name:
+        lookback = st.slider(
+            "Breakout lookback (days)",
+            min_value=10,
+            max_value=200,
+            value=50,
+            step=5,
+            help="Long when price breaks above the previous N-day high, otherwise cash.",
+        )
+
     # ---- Backtest automatique (plus de bouton) ----
 
-    # Chargement des données
+    # Load data
     data = load_price_history(ticker, period=period, interval=interval)
     if data.empty:
         st.error("Failed to load data for this ticker.")
@@ -227,22 +239,31 @@ def single_asset_page():
 
     # Stratégies
     equity_bh = backtest_buy_hold(prices)
+
     equity_mom = None
+    equity_break = None
+    
     if "Momentum" in strategy_name:
         equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow)
+    
+    if "Breakout" in strategy_name:
+        equity_break = backtest_breakout(prices, lookback=lookback)
 
     # ---------- GRAPHIQUE PRINCIPAL ----------
     # Choix de la stratégie affichée
     if "Momentum" in strategy_name and equity_mom is not None:
         equity_sel = equity_mom.copy()
         strat_label = "Momentum Strategy"
+    elif "Breakout" in strategy_name and equity_break is not None:
+        equity_sel = equity_break.copy()
+        strat_label = f"Breakout Strategy ({lookback}d)"
     else:
         equity_sel = equity_bh.copy()
         strat_label = "Buy & Hold Strategy"
 
     st.subheader(f"Raw price vs {strat_label}")
 
-    # Prix brut
+    # Raw price
     price_raw = prices.copy()
 
     # Sécurité : si jamais ce sont des DataFrame
@@ -271,6 +292,7 @@ def single_asset_page():
     asset_metrics = compute_metrics(prices)
     bh_metrics = compute_metrics(equity_bh)
     mom_metrics = compute_metrics(equity_mom) if equity_mom is not None else None
+    break_metrics = compute_metrics(equity_break) if equity_break is not None else None
 
     # ----- Actif -----
     st.markdown(f"### Asset ({ticker})")
@@ -332,3 +354,25 @@ def single_asset_page():
             metric_with_help("Sortino", f"{mom_metrics['sortino']:.2f}")
         with cm7:
             metric_with_help("Daily mean return", f"{mom_metrics['mean_daily'] * 100:.3f}%")
+
+
+    if break_metrics is not None:
+        st.markdown("### Breakout Strategy")
+    
+        bx1, bx2, bx3, bx4 = st.columns(4)
+        with bx1:
+            metric_with_help("Annual return", f"{break_metrics['annual_return'] * 100:.2f}%")
+        with bx2:
+            metric_with_help("Annual volatility", f"{break_metrics['annual_vol'] * 100:.2f}%")
+        with bx3:
+            metric_with_help("Sharpe", f"{break_metrics['sharpe']:.2f}")
+        with bx4:
+            metric_with_help("Max drawdown", f"{break_metrics['max_drawdown'] * 100:.2f}%")
+    
+        bx5, bx6, bx7, _ = st.columns(4)
+        with bx5:
+            metric_with_help("Calmar", f"{break_metrics['calmar']:.2f}")
+        with bx6:
+            metric_with_help("Sortino", f"{break_metrics['sortino']:.2f}")
+        with bx7:
+            metric_with_help("Daily mean return", f"{break_metrics['mean_daily'] * 100:.3f}%")

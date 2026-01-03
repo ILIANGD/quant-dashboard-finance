@@ -188,15 +188,14 @@ def single_asset_page():
         )
 
 
-    quote = load_live_quote(ticker)
-
+    try:
+        quote = load_live_quote(ticker)
+    except Exception:
+        quote = {"last_price": None, "asof_utc": "N/A"}
+    
     c1, c2 = st.columns(2)
     with c1:
-        if quote["last_price"] is None:
-            st.metric("Current price", "N/A")
-        else:
-            st.metric("Current price", f"{quote['last_price']:.2f}")
-    
+        st.metric("Current price", "N/A" if quote["last_price"] is None else f"{quote['last_price']:.2f}")
     with c2:
         st.caption(f"Last update: {quote['asof_utc']}")
         

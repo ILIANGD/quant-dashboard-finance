@@ -50,6 +50,7 @@ def backtest_breakout(prices: pd.Series, lookback: int = 50) -> pd.Series:
     prices = prices.dropna()
     rets = prices.pct_change().dropna()
 
+    # IMPORTANT: require full lookback window before generating signals
     rolling_high = prices.shift(1).rolling(lookback, min_periods=lookback).max()
     signal = (prices >= rolling_high).astype(int)
 
@@ -135,7 +136,6 @@ def _infer_pandas_freq(index: pd.DatetimeIndex) -> str:
     freq = pd.infer_freq(index)
     if freq:
         return freq
-    # fallback
     if len(index) >= 2:
         delta = index[-1] - index[-2]
         if delta.days >= 28:
@@ -165,14 +165,11 @@ def forecast_linear_trend_with_ci(
     y = np.log(s.values) if use_log else s.values
     t = np.arange(len(y), dtype=float)
 
-    # Fit line (least squares)
     b, a = np.polyfit(t, y, deg=1)  # y ≈ b*t + a
     y_hat = a + b * t
     resid = y - y_hat
     sigma = float(np.std(resid, ddof=2)) if len(resid) > 2 else 0.0
 
-    # Normal quantile (approx)
-    # for 95%: z≈1.96 ; 90%: 1.645 ; 99%: 2.576
     z_map = {0.90: 1.645, 0.95: 1.96, 0.99: 2.576}
     z = z_map.get(round(ci_level, 2), 1.96)
 
@@ -194,40 +191,19 @@ def forecast_linear_trend_with_ci(
         lo = lower
         hi = upper
 
-    out = pd.DataFrame(
-        {"forecast": pred, "lower": lo, "upper": hi},
-        index=future_index,
-    )
-    return out
+    return pd.DataFrame({"forecast": pred, "lower": lo, "upper": hi}, index=future_index)
 
 
 def plot_forecast_with_band(history: pd.Series, fc: pd.DataFrame):
     hist_df = history.dropna().to_frame("price").reset_index()
     hist_df.columns = ["date", "price"]
-    hist_df["type"] = "History"
 
     fc_df = fc.reset_index()
     fc_df.columns = ["date", "forecast", "lower", "upper"]
-    fc_df["type"] = "Forecast"
 
-    # Line for history
-    line_hist = (
-        alt.Chart(hist_df)
-        .mark_line()
-        .encode(x="date:T", y="price:Q")
-    )
-
-    # Band + line for forecast
-    band = (
-        alt.Chart(fc_df)
-        .mark_area(opacity=0.2)
-        .encode(x="date:T", y="lower:Q", y2="upper:Q")
-    )
-    line_fc = (
-        alt.Chart(fc_df)
-        .mark_line(strokeDash=[4, 4])
-        .encode(x="date:T", y="forecast:Q")
-    )
+    line_hist = alt.Chart(hist_df).mark_line().encode(x="date:T", y="price:Q")
+    band = alt.Chart(fc_df).mark_area(opacity=0.2).encode(x="date:T", y="lower:Q", y2="upper:Q")
+    line_fc = alt.Chart(fc_df).mark_line(strokeDash=[4, 4]).encode(x="date:T", y="forecast:Q")
 
     st.altair_chart(line_hist + band + line_fc, use_container_width=True)
 
@@ -264,8 +240,8 @@ def single_asset_page():
         )
 
     st.caption(
-    f"Frequency meaning: each point corresponds to one {interval} observation "
-    f"used both for the price series and for strategy decisions."
+        f"Frequency meaning: each point corresponds to one {interval} observation "
+        f"used both for the price series and for strategy decisions."
     )
 
     with col4:
@@ -283,10 +259,10 @@ def single_asset_page():
 
     c1, c2 = st.columns(2)
     with c1:
-        if quote["last_price"] is None:
+        if quote.get("last_price") is None:
             st.metric("Current price", "N/A")
         else:
-            st.metric("Current price", f"{quote['last_price']:.2f} USD")
+            st.metric("Current price", f"{float(quote['last_price']):.2f} USD")
     with c2:
         st.caption(f"Last update: {quote.get('asof_utc', 'N/A')}")
 
@@ -313,13 +289,6 @@ def single_asset_page():
             help="Long when price breaks above the previous N-day high, otherwise cash.",
         )
 
-    n_points = int(prices.dropna().shape[0])
-    if "Breakout" in strategy_name and n_points <= lookback + 5:
-        st.warning(
-            f"Not enough data points for breakout: need > {lookback+5}, got {n_points}. "
-            "Increase lookback period or reduce breakout lookback."
-            )
-
     # Load history
     try:
         data = load_price_history(ticker, period=period, interval=interval)
@@ -335,20 +304,28 @@ def single_asset_page():
         st.error("No usable price data for this ticker.")
         return
 
+    # If breakout selected, enforce enough data and stop early if not
+    n_points = int(prices.shape[0])
+    if "Breakout" in strategy_name and n_points <= lookback + 5:
+        st.warning(
+            f"Not enough data points for breakout: need > {lookback+5}, got {n_points}. "
+            "Increase lookback period or reduce breakout lookback."
+        )
+        return
+
     # Backtests
     equity_bh = backtest_buy_hold(prices)
     equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow) if "Momentum" in strategy_name else None
     equity_break = backtest_breakout(prices, lookback=lookback) if "Breakout" in strategy_name else None
 
+    # Optional debug (aligned with min_periods)
     if equity_break is not None:
-    # Debug: how often we are invested?
-    prices_dbg = prices.dropna()
-    rolling_high_dbg = prices_dbg.shift(1).rolling(lookback).max()
-    signal_dbg = (prices_dbg >= rolling_high_dbg).astype(int)
-    position_dbg = signal_dbg.shift(1).reindex(prices_dbg.index).fillna(0)
-
-    invested_ratio = float((position_dbg > 0).mean())
-    st.caption(f"Breakout debug: invested {invested_ratio*100:.1f}% of the time.")
+        prices_dbg = prices.dropna()
+        rolling_high_dbg = prices_dbg.shift(1).rolling(lookback, min_periods=lookback).max()
+        signal_dbg = (prices_dbg >= rolling_high_dbg).astype(int)
+        position_dbg = signal_dbg.shift(1).reindex(prices_dbg.index).fillna(0)
+        invested_ratio = float((position_dbg > 0).mean())
+        st.caption(f"Breakout debug: invested {invested_ratio*100:.1f}% of the time.")
 
     # Choose strategy curve for the main plot
     if equity_mom is not None:
@@ -362,35 +339,39 @@ def single_asset_page():
         strat_label = "Buy & Hold Strategy"
 
     st.subheader(
-    f"Raw price (USD) vs {strat_label}",
-    help=(
-        "Each curve is built from discrete observations (points) "
-        "at the selected frequency. "
-        "The strategy curve reflects cumulative portfolio value."
-        )
-    )    
+        f"Raw price (USD) vs {strat_label}",
+        help=(
+            "Each curve is built from discrete observations (points) "
+            "at the selected frequency. "
+            "The strategy curve reflects cumulative portfolio value."
+        ),
+    )
 
+    # IMPORTANT FIX:
+    # - Raw price is in USD (market price)
+    # - Strategy curve should be a portfolio value in USD with an initial capital
     price_raw = prices.copy()
     if isinstance(price_raw, pd.DataFrame):
         price_raw = price_raw.iloc[:, 0]
     if isinstance(equity_sel, pd.DataFrame):
         equity_sel = equity_sel.iloc[:, 0]
 
-    # Strategy value in USD scale
-    strategy_value = equity_sel * float(price_raw.iloc[0])
+    initial_capital = 1000.0  # USD (ensures Buy&Hold is NOT identical to raw price)
+    strategy_value = equity_sel * initial_capital
 
-    price_raw.name = "Raw price"
-    strategy_value.name = strat_label
+    price_raw.name = "Raw price (USD)"
+    strategy_value.name = f"{strat_label} (Portfolio, USD)"
 
     df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
     st.line_chart(df_plot)
 
     st.caption(
-    "Each point represents one observation at the selected frequency "
-    "(daily, weekly, or monthly). "
-    "The raw price curve shows the observed market price in USD, "
-    "while the strategy curve shows the simulated portfolio value "
-    "based on trading signals applied at each observation date."
+        "Each point represents one observation at the selected frequency "
+        "(daily, weekly, or monthly). "
+        "The raw price curve shows the observed market price in USD, "
+        "while the strategy curve shows the simulated portfolio value "
+        "starting from an initial capital (USD) and applying trading signals "
+        "at each observation date."
     )
 
     # =========================
@@ -406,7 +387,10 @@ def single_asset_page():
         with f2:
             ci_level = st.selectbox("Confidence level", [0.90, 0.95, 0.99], index=1)
         with f3:
-            use_log = st.selectbox("Model space", ["Log-price (recommended)", "Price"], index=0) == "Log-price (recommended)"
+            use_log = (
+                st.selectbox("Model space", ["Log-price (recommended)", "Price"], index=0)
+                == "Log-price (recommended)"
+            )
 
         fc = forecast_linear_trend_with_ci(prices, horizon=horizon, ci_level=ci_level, use_log=use_log)
         if fc.empty:
@@ -414,14 +398,20 @@ def single_asset_page():
         else:
             plot_forecast_with_band(prices, fc)
             last_fc = float(fc["forecast"].iloc[-1])
-            st.caption(f"Last forecast point: {last_fc:.2f} USD  |  CI{int(ci_level*100)}%: [{fc['lower'].iloc[-1]:.2f}, {fc['upper'].iloc[-1]:.2f}] USD")
+            st.caption(
+                f"Last forecast point: {last_fc:.2f} USD  |  "
+                f"CI{int(ci_level*100)}%: "
+                f"[{float(fc['lower'].iloc[-1]):.2f}, {float(fc['upper'].iloc[-1]):.2f}] USD"
+            )
 
     st.caption(
-    "Performance metrics are computed from the same series shown above. "
-    "Returns are calculated between consecutive points of the selected frequency."
+        "Performance metrics are computed from the same series shown above. "
+        "Returns are calculated between consecutive points of the selected frequency."
     )
-    
+
+    # =========================
     # Metrics
+    # =========================
     st.subheader("Performance metrics")
 
     asset_metrics = compute_metrics(prices)

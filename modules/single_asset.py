@@ -382,14 +382,14 @@ def single_asset_page():
     )
 
     st.altair_chart(price_line + strategy_line, use_container_width=True)
-        st.caption(
-            "Each point represents one observation at the selected frequency "
-            "(daily, weekly, or monthly). "
-            "The raw price curve shows the observed market price in USD, "
-            "while the strategy curve shows the simulated portfolio value "
-            "starting from an initial capital (USD) and applying trading signals "
-            "at each observation date."
-        )
+    st.caption(
+        "Each point represents one observation at the selected frequency "
+        "(daily, weekly, or monthly). "
+        "The raw price curve shows the observed market price in USD, "
+        "while the strategy curve shows the simulated portfolio value "
+        "starting from an initial capital (USD) and applying trading signals "
+        "at each observation date."        
+    )
 
     # =========================
     # Forecast

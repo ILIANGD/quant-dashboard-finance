@@ -362,8 +362,12 @@ def single_asset_page():
     price_raw.name = "Raw price"
     strategy_value.name = strat_label
 
-    df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna().reset_index()
-    df_plot.columns = ["date", "Raw price", strat_label]
+    df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
+    df_plot = df_plot.reset_index().rename(columns={df_plot.index.name or "index": "date"})
+    df_plot = df_plot.rename(columns={"Raw price": "Raw price"})  # no-op, juste clair
+
+    df_plot = df_plot.rename(columns={price_raw.name: "Raw price", strat_label: strat_label})
+    df_plot = df_plot[["date", "Raw price", strat_label]]
     
     base = alt.Chart(df_plot).encode(x=alt.X("date:T", title="Date"))
     
@@ -377,15 +381,15 @@ def single_asset_page():
                 axis=alt.Axis(orient="right"))
     )
 
-st.altair_chart(price_line + strategy_line, use_container_width=True)
-    st.caption(
-        "Each point represents one observation at the selected frequency "
-        "(daily, weekly, or monthly). "
-        "The raw price curve shows the observed market price in USD, "
-        "while the strategy curve shows the simulated portfolio value "
-        "starting from an initial capital (USD) and applying trading signals "
-        "at each observation date."
-    )
+    st.altair_chart(price_line + strategy_line, use_container_width=True)
+        st.caption(
+            "Each point represents one observation at the selected frequency "
+            "(daily, weekly, or monthly). "
+            "The raw price curve shows the observed market price in USD, "
+            "while the strategy curve shows the simulated portfolio value "
+            "starting from an initial capital (USD) and applying trading signals "
+            "at each observation date."
+        )
 
     # =========================
     # Forecast

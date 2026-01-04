@@ -283,10 +283,10 @@ def single_asset_page():
 
     c1, c2 = st.columns(2)
     with c1:
-        if quote.get("last_price") is None:
+        if quote["last_price"] is None:
             st.metric("Current price", "N/A")
         else:
-            st.metric("Current price", f"{float(quote['last_price']):.2f} USD")
+            st.metric("Current price", f"{quote['last_price']:.2f} USD")
     with c2:
         st.caption(f"Last update: {quote.get('asof_utc', 'N/A')}")
 

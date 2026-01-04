@@ -3,6 +3,7 @@ import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 from services.data_loader import load_price_history, load_live_quote
 
+
 # ---------- STRATÉGIES DE BACKTEST ----------
 
 def backtest_buy_hold(prices: pd.Series) -> pd.Series:

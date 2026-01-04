@@ -359,12 +359,25 @@ def single_asset_page():
     initial_capital = 1000.0  # USD (ensures Buy&Hold is NOT identical to raw price)
     strategy_value = equity_sel * initial_capital
 
-    price_raw.name = "Raw price (USD)"
-    strategy_value.name = f"{strat_label} (Portfolio, USD)"
+    price_raw.name = "Raw price"
+    strategy_value.name = strat_label
 
-    df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
-    st.line_chart(df_plot)
+    df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna().reset_index()
+    df_plot.columns = ["date", "Raw price", strat_label]
+    
+    base = alt.Chart(df_plot).encode(x=alt.X("date:T", title="Date"))
+    
+    price_line = base.mark_line().encode(
+        y=alt.Y("Raw price:Q", title="Price (USD)")
+    )
+    
+    strategy_line = base.mark_line(strokeDash=[6, 3]).encode(
+        y=alt.Y(f"{strat_label}:Q",
+                title="Strategy value (USD)",
+                axis=alt.Axis(orient="right"))
+    )
 
+st.altair_chart(price_line + strategy_line, use_container_width=True)
     st.caption(
         "Each point represents one observation at the selected frequency "
         "(daily, weekly, or monthly). "

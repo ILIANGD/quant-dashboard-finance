@@ -128,7 +128,7 @@ def metric_with_help(label: str, value_str: str):
 
 
 # =========================
-# Forecast (Optional Bonus)
+# Forecast
 # =========================
 
 def _infer_pandas_freq(index: pd.DatetimeIndex) -> str:
@@ -263,6 +263,11 @@ def single_asset_page():
             help="1d = daily, 1wk = weekly, 1mo = monthly",
         )
 
+    st.caption(
+    f"Frequency meaning: each point corresponds to one {interval} observation "
+    f"used both for the price series and for strategy decisions."
+    )
+
     with col4:
         strategy_name = st.selectbox(
             "Strategy",
@@ -339,7 +344,14 @@ def single_asset_page():
         equity_sel = equity_bh.copy()
         strat_label = "Buy & Hold Strategy"
 
-    st.subheader(f"Raw price (USD) vs {strat_label}")
+    st.subheader(
+    f"Raw price (USD) vs {strat_label}",
+    help=(
+        "Each curve is built from discrete observations (points) "
+        "at the selected frequency. "
+        "The strategy curve reflects cumulative portfolio value."
+        )
+    )    
 
     price_raw = prices.copy()
     if isinstance(price_raw, pd.DataFrame):
@@ -356,10 +368,18 @@ def single_asset_page():
     df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
     st.line_chart(df_plot)
 
+    st.caption(
+    "Each point represents one observation at the selected frequency "
+    "(daily, weekly, or monthly). "
+    "The raw price curve shows the observed market price in USD, "
+    "while the strategy curve shows the simulated portfolio value "
+    "based on trading signals applied at each observation date."
+    )
+
     # =========================
-    # Optional Bonus: Forecast
+    # Forecast
     # =========================
-    st.subheader("Forecast (Optional Bonus)")
+    st.subheader("Forecast")
 
     enable_fc = st.checkbox("Enable forecast", value=False)
     if enable_fc:
@@ -379,6 +399,11 @@ def single_asset_page():
             last_fc = float(fc["forecast"].iloc[-1])
             st.caption(f"Last forecast point: {last_fc:.2f} USD  |  CI{int(ci_level*100)}%: [{fc['lower'].iloc[-1]:.2f}, {fc['upper'].iloc[-1]:.2f}] USD")
 
+    st.caption(
+    "Performance metrics are computed from the same series shown above. "
+    "Returns are calculated between consecutive points of the selected frequency."
+    )
+    
     # Metrics
     st.subheader("Performance metrics")
 

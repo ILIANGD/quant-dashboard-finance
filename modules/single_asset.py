@@ -50,8 +50,8 @@ def backtest_breakout(prices: pd.Series, lookback: int = 50) -> pd.Series:
     prices = prices.dropna()
     rets = prices.pct_change().dropna()
 
-    rolling_high = prices.shift(1).rolling(lookback).max()
-    signal = (prices > rolling_high).astype(int)
+    rolling_high = prices.shift(1).rolling(lookback, min_periods=lookback).max()
+    signal = (prices >= rolling_high).astype(int)
 
     position = signal.shift(1).reindex(rets.index).fillna(0)
     strat_rets = position * rets
@@ -313,6 +313,13 @@ def single_asset_page():
             help="Long when price breaks above the previous N-day high, otherwise cash.",
         )
 
+    n_points = int(prices.dropna().shape[0])
+    if "Breakout" in strategy_name and n_points <= lookback + 5:
+        st.warning(
+            f"Not enough data points for breakout: need > {lookback+5}, got {n_points}. "
+            "Increase lookback period or reduce breakout lookback."
+            )
+
     # Load history
     try:
         data = load_price_history(ticker, period=period, interval=interval)
@@ -332,6 +339,16 @@ def single_asset_page():
     equity_bh = backtest_buy_hold(prices)
     equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow) if "Momentum" in strategy_name else None
     equity_break = backtest_breakout(prices, lookback=lookback) if "Breakout" in strategy_name else None
+
+    if equity_break is not None:
+    # Debug: how often we are invested?
+    prices_dbg = prices.dropna()
+    rolling_high_dbg = prices_dbg.shift(1).rolling(lookback).max()
+    signal_dbg = (prices_dbg >= rolling_high_dbg).astype(int)
+    position_dbg = signal_dbg.shift(1).reindex(prices_dbg.index).fillna(0)
+
+    invested_ratio = float((position_dbg > 0).mean())
+    st.caption(f"Breakout debug: invested {invested_ratio*100:.1f}% of the time.")
 
     # Choose strategy curve for the main plot
     if equity_mom is not None:

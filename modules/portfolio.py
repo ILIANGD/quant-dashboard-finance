@@ -223,9 +223,17 @@ def plot_multi_assets_and_portfolio(prices_df: pd.DataFrame, portfolio_value: pd
 def plot_corr_heatmap(corr: pd.DataFrame):
     if corr is None or corr.empty:
         return
-    idx_name = corr.index.name or "asset1"
-    corr_long = corr.reset_index().melt(id_vars=idx_name, var_name="asset2", value_name="corr")
-    corr_long = corr_long.rename(columns={idx_name: "asset1"})
+
+    # After reset_index(), pandas creates a first column named:
+    # - corr.index.name if set
+    # - otherwise "index"
+    corr_reset = corr.reset_index()
+    first_col = corr_reset.columns[0]  # guaranteed to exist
+    corr_long = corr_reset.melt(
+        id_vars=first_col,
+        var_name="asset2",
+        value_name="corr",
+    ).rename(columns={first_col: "asset1"})
 
     heat = (
         alt.Chart(corr_long)
@@ -238,7 +246,6 @@ def plot_corr_heatmap(corr: pd.DataFrame):
         )
     )
     st.altair_chart(heat, use_container_width=True)
-
 
 # =========================
 # Streamlit page
@@ -477,3 +484,4 @@ def portfolio_page():
     wdf["weight_%"] = (wdf["weight"] * 100.0).round(2)
 
     st.dataframe(wdf[["ticker", "weight_%"]], hide_index=True)
+

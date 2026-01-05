@@ -318,7 +318,7 @@ def portfolio_page():
         return
 
     # ---- Live quotes block ----
-    st.subheader("Current values (live-ish)")
+    st.subheader("Current values")
     qcols = st.columns(min(3, len(tickers)))
     for i, t in enumerate(tickers):
         with qcols[i % len(qcols)]:
@@ -464,3 +464,4 @@ def portfolio_page():
     st.subheader("Weights used (normalized)")
     wdf = pd.DataFrame({"ticker": list(weights.keys()), "weight": list(weights.values())}).sort_values("weight", ascending=False)
     st.dataframe(wdf, hide_index=True)
+

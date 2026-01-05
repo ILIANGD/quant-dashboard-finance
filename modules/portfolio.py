@@ -21,7 +21,7 @@ def _safe_float(x):
 
 
 def _normalize_weights(w: dict) -> dict:
-    # keep only non-negative numbers
+    # keep only non-negative numbers, normalize to sum to 1
     ww = {}
     for k, v in w.items():
         try:
@@ -306,12 +306,12 @@ def portfolio_page():
         st.caption("Custom weights are normalized to sum to 1.")
         cols = st.columns(len(tickers))
         for i, t in enumerate(tickers):
-            default_w = DEFAULT_WEIGHTS.get(t, 0.0)
+            default_w = float(DEFAULT_WEIGHTS.get(t, 0.0))
             with cols[i]:
                 weights[t] = st.number_input(
                     f"{t}",
                     min_value=0.0,
-                    value=float(default_w),
+                    value=default_w,
                     step=0.05,
                     help="Weight before normalization",
                 )
@@ -408,7 +408,7 @@ def portfolio_page():
         .melt(id_vars=idx_name, var_name="series", value_name="value")
         .rename(columns={idx_name: "date"})
     )
-    port_long = norm_port.to_frame("value").reset_index().rename(columns={norm_port.index.name or "index": "date"})
+    port_long = norm_port.to_frame("value").reset_index().rename(columns={port_long.columns[0]: "date"})
     port_long["series"] = "Portfolio (base 100)"
 
     norm_all = pd.concat([norm_long, port_long], ignore_index=True)
@@ -469,6 +469,7 @@ def portfolio_page():
     wdf = (
         pd.DataFrame({"ticker": list(weights.keys()), "weight": list(weights.values())})
         .sort_values("weight", ascending=False)
+        .reset_index(drop=True)
     )
-    wdf["weight_%"] = (wdf["weight"] * 100).round(2)
+    wdf["weight_%"] = (wdf["weight"] * 100.0).round(2)
     st.dataframe(wdf[["ticker", "weight_%"]], hide_index=True)

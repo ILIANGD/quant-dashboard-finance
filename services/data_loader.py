@@ -57,47 +57,39 @@ def load_price_history(
 
 def load_live_quote(ticker: str) -> dict:
     """
-    Retrieve a live-ish quote (last traded price) and timestamp.
-
-    Uses:
-    - fast_info if available
-    - fallback to 1-minute intraday data
-
-    Returns
-    -------
-    dict
-        {
-            'last_price': float | None,
-            'asof_utc': str
-        }
+    Returns a live-ish quote (last price) + timestamp.
+    Uses yfinance (public API wrapper).
     """
-    last_price = None
+    t = yf.Ticker(ticker)
 
-    try:
-        t = yf.Ticker(ticker)
-    except Exception:
-        return {
-            "last_price": None,
-            "asof_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        }
+    last = None
 
-    # 1) fast_info (fastest, but not always present)
+    # 1) Try fast_info first (fastest when available)
     try:
         fi = getattr(t, "fast_info", {})
-        last_price = fi.get("last_price", None)
+        last = fi.get("last_price", None)
     except Exception:
-        last_price = None
+        last = None
 
-    # 2) fallback: intraday 1-minute data
-    if last_price is None:
+    # 2) Try intraday 1m (more reliable)
+    if last is None:
         try:
             df = t.history(period="1d", interval="1m")
-            if df is not None and not df.empty and "Close" in df.columns:
-                last_price = float(df["Close"].iloc[-1])
+            if isinstance(df, pd.DataFrame) and (not df.empty) and ("Close" in df.columns):
+                last = float(df["Close"].dropna().iloc[-1])
         except Exception:
-            last_price = None
+            last = None
+
+    # 3) Fallback: last daily close (in case intraday is unavailable)
+    if last is None:
+        try:
+            df = t.history(period="5d", interval="1d")
+            if isinstance(df, pd.DataFrame) and (not df.empty) and ("Close" in df.columns):
+                last = float(df["Close"].dropna().iloc[-1])
+        except Exception:
+            last = None
 
     return {
-        "last_price": last_price,
+        "last_price": last,
         "asof_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
     }

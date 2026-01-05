@@ -8,6 +8,38 @@ from services.data_loader import load_price_history, load_live_quote
 
 
 # =========================
+# Tooltips (help ?)
+# =========================
+
+PORTFOLIO_TOOLTIPS = {
+    "Tickers": "Comma-separated tickers (>= 3). Example: BZ=F, GC=F, HG=F.",
+    "Lookback period": "How far back to download historical data.",
+    "Frequency": "Sampling frequency used for prices, returns, and rebalancing.",
+    "Allocation rule": "Equal weight gives the same weight to each asset. Custom weights are normalized to sum to 1.",
+    "Rebalancing frequency": "How often the portfolio is reset to the target weights.",
+    "Initial capital": "Starting portfolio value in USD.",
+    "Main chart": "Left axis: asset prices. Right axis: portfolio cumulative value (USD).",
+    "Normalized comparison": "All series rebased to 100 at the start date (relative comparison).",
+    "Portfolio annual return": "Annualized return from daily compounded returns (252 trading days).",
+    "Portfolio annual volatility": "Annualized volatility: std(daily returns) × sqrt(252).",
+    "Portfolio Sharpe": "Sharpe ratio assuming risk-free rate = 0.",
+    "Portfolio max drawdown": "Maximum peak-to-trough decline of portfolio value.",
+    "Weighted avg asset vol": "Weighted average of individual asset volatilities (no diversification).",
+    "Diversification effect": "1 − (portfolio volatility / weighted average asset volatility).",
+    "Correlation matrix": "Pairwise correlations of aligned asset returns at the selected frequency.",
+    "Weights used": "Weights after normalization (sum to 1).",
+}
+
+
+def metric_with_help(label: str, value_str: str):
+    st.caption(f"**{label}**", help=PORTFOLIO_TOOLTIPS.get(label, ""))
+    st.markdown(
+        f"<div style='font-size:1.3em; font-weight:600;'>{value_str}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+# =========================
 # Helpers
 # =========================
 
@@ -21,7 +53,7 @@ def _safe_float(x):
 
 
 def _normalize_weights(w: dict) -> dict:
-    # keep only non-negative numbers, normalize to sum to 1
+    """Keep only non-negative numbers, normalize to sum to 1."""
     ww = {}
     for k, v in w.items():
         try:
@@ -31,19 +63,24 @@ def _normalize_weights(w: dict) -> dict:
         if vv >= 0:
             ww[k] = vv
 
-    s = sum(ww.values())
+    s = float(sum(ww.values()))
     if s <= 0:
-        n = len(ww) if len(ww) > 0 else 1
-        return {k: 1.0 / n for k in ww} if ww else {}
+        if not ww:
+            return {}
+        n = len(ww)
+        return {k: 1.0 / n for k in ww}
+
     return {k: v / s for k, v in ww.items()}
 
 
 def _align_prices(price_dict: dict) -> pd.DataFrame:
-    # price_dict: {ticker: Series}
+    """
+    price_dict: {ticker: Series}
+    Align on common dates, keep rows where all assets exist.
+    """
     df = pd.concat(price_dict, axis=1)
     df.columns = list(price_dict.keys())
     df = df.sort_index()
-    # keep rows where all assets exist (portfolio needs alignment)
     df = df.dropna(how="any")
     return df
 
@@ -54,16 +91,19 @@ def rebalance_dates(index: pd.DatetimeIndex, rule: str) -> pd.DatetimeIndex:
     Returns dates in index at which we rebalance.
     """
     if rule == "Daily":
-        return index
+        return pd.DatetimeIndex(index)
+
+    s = pd.Series(index=index, data=index)
+
     if rule == "Weekly":
-        g = pd.Series(index=index, data=index)
-        key = g.index.to_period("W").astype(str)
-        return pd.DatetimeIndex(g.groupby(key).first().values)
+        key = s.index.to_period("W").astype(str)
+        return pd.DatetimeIndex(s.groupby(key).first().values)
+
     if rule == "Monthly":
-        g = pd.Series(index=index, data=index)
-        key = g.index.to_period("M").astype(str)
-        return pd.DatetimeIndex(g.groupby(key).first().values)
-    return index
+        key = s.index.to_period("M").astype(str)
+        return pd.DatetimeIndex(s.groupby(key).first().values)
+
+    return pd.DatetimeIndex(index)
 
 
 # =========================
@@ -77,10 +117,9 @@ def simulate_portfolio(
     initial_capital: float = 10_000.0,
 ) -> pd.Series:
     """
-    Simple backtest:
     - compute returns
     - hold weights until next rebalance date (piecewise-constant weights)
-    - portfolio return each day = sum_i w_i * r_i
+    - portfolio return each period = sum_i w_i * r_i
     """
     prices_df = prices_df.dropna()
     if prices_df.empty:
@@ -91,21 +130,19 @@ def simulate_portfolio(
         return pd.Series(dtype=float)
 
     tickers = list(prices_df.columns)
+
     w = _normalize_weights({t: weights.get(t, 0.0) for t in tickers})
     if not w:
         w = {t: 1.0 / len(tickers) for t in tickers}
 
-    # weight vector in column order
     w0 = np.array([w.get(t, 0.0) for t in tickers], dtype=float)
 
-    # rebalancing schedule
-    rdates = set(pd.DatetimeIndex(rebalance_dates(rets.index, rebal_rule)))
+    rdates = set(rebalance_dates(rets.index, rebal_rule))
 
     current_w = w0.copy()
     port_rets = []
 
     for dt, row in rets.iterrows():
-        # rebalance at start of day (before applying today's return)
         if dt in rdates:
             current_w = w0.copy()
 
@@ -113,7 +150,7 @@ def simulate_portfolio(
         port_rets.append(pr)
 
     port_rets = pd.Series(port_rets, index=rets.index, name="portfolio_ret")
-    equity = (1 + port_rets).cumprod() * float(initial_capital)
+    equity = (1.0 + port_rets).cumprod() * float(initial_capital)
     equity.name = "Portfolio value (USD)"
     return equity
 
@@ -123,7 +160,6 @@ def simulate_portfolio(
 # =========================
 
 def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
-    """Compute key performance metrics for an asset or strategy."""
     if series is None:
         return {}
     if isinstance(series, pd.DataFrame):
@@ -137,20 +173,22 @@ def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
     mean_daily = float(rets.mean())
     vol_daily = float(rets.std())
 
-    annual_return = (1 + mean_daily) ** 252 - 1
-    annual_vol = vol_daily * np.sqrt(252)
+    annual_return = (1.0 + mean_daily) ** 252 - 1.0
+    annual_vol = vol_daily * np.sqrt(252.0)
 
-    sharpe = float("nan") if (annual_vol == 0 or pd.isna(annual_vol)) else (annual_return / annual_vol)
+    sharpe = float("nan")
+    if (annual_vol is not None) and np.isfinite(annual_vol) and annual_vol != 0:
+        sharpe = annual_return / annual_vol
 
-    cum = (1 + rets).cumprod()
+    cum = (1.0 + rets).cumprod()
     running_max = cum.cummax()
-    drawdown = cum / running_max - 1
+    drawdown = cum / running_max - 1.0
     max_dd = float(drawdown.min())
 
     calmar = float("nan") if max_dd == 0 else (annual_return / abs(max_dd))
 
-    downside = rets[rets < 0].std() * np.sqrt(252)
-    sortino = annual_return / downside if (downside != 0 and not pd.isna(downside)) else float("nan")
+    downside = rets[rets < 0].std() * np.sqrt(252.0)
+    sortino = annual_return / downside if (downside is not None and np.isfinite(downside) and downside != 0) else float("nan")
 
     return {
         "mean_daily": mean_daily,
@@ -170,9 +208,9 @@ def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
 
 def plot_multi_assets_and_portfolio(prices_df: pd.DataFrame, portfolio_value: pd.Series):
     """
-    Main chart requirement:
+    Requirement:
     - multiple asset prices together
-    - cumulative value of portfolio (two+ curves)
+    - cumulative value of portfolio
     """
     prices_df = prices_df.dropna()
     portfolio_value = portfolio_value.dropna()
@@ -181,7 +219,7 @@ def plot_multi_assets_and_portfolio(prices_df: pd.DataFrame, portfolio_value: pd
     prices_df = prices_df.loc[common]
     portfolio_value = portfolio_value.loc[common]
 
-    idx_name = prices_df.index.name or "date"
+    idx_name = prices_df.index.name or "index"
 
     long_prices = (
         prices_df.reset_index()
@@ -194,7 +232,6 @@ def plot_multi_assets_and_portfolio(prices_df: pd.DataFrame, portfolio_value: pd
 
     base_x = alt.X("date:T", title="Date")
 
-    # Multi-asset prices (left axis)
     price_lines = (
         alt.Chart(long_prices)
         .mark_line()
@@ -206,7 +243,6 @@ def plot_multi_assets_and_portfolio(prices_df: pd.DataFrame, portfolio_value: pd
         )
     )
 
-    # Portfolio value (right axis)
     port_line = (
         alt.Chart(port_df)
         .mark_line(strokeDash=[6, 3])
@@ -224,16 +260,12 @@ def plot_corr_heatmap(corr: pd.DataFrame):
     if corr is None or corr.empty:
         return
 
-    # After reset_index(), pandas creates a first column named:
-    # - corr.index.name if set
-    # - otherwise "index"
     corr_reset = corr.reset_index()
-    first_col = corr_reset.columns[0]  # guaranteed to exist
-    corr_long = corr_reset.melt(
-        id_vars=first_col,
-        var_name="asset2",
-        value_name="corr",
-    ).rename(columns={first_col: "asset1"})
+    first_col = corr_reset.columns[0]  # "index" if unnamed
+    corr_long = (
+        corr_reset.melt(id_vars=first_col, var_name="asset2", value_name="corr")
+        .rename(columns={first_col: "asset1"})
+    )
 
     heat = (
         alt.Chart(corr_long)
@@ -247,6 +279,7 @@ def plot_corr_heatmap(corr: pd.DataFrame):
     )
     st.altair_chart(heat, use_container_width=True)
 
+
 # =========================
 # Streamlit page
 # =========================
@@ -254,10 +287,8 @@ def plot_corr_heatmap(corr: pd.DataFrame):
 def portfolio_page():
     st.title("Portfolio Module – Multi-Asset Portfolio")
 
-    # Auto refresh every 5 minutes
     st_autorefresh(interval=300_000, key="auto_refresh_5min_portfolio")
 
-    # ---- Defaults requested ----
     DEFAULT_TICKERS = ["BZ=F", "GC=F", "HG=F"]  # Brent, Gold, Copper
     DEFAULT_WEIGHTS = {"BZ=F": 0.40, "GC=F": 0.35, "HG=F": 0.25}
 
@@ -268,50 +299,71 @@ def portfolio_page():
         tickers_txt = st.text_input(
             "Tickers (comma-separated, >= 3)",
             value=", ".join(DEFAULT_TICKERS),
-            help="Commodity example: BZ=F (Brent), GC=F (Gold), HG=F (Copper)",
+            help=PORTFOLIO_TOOLTIPS["Tickers"],
         )
 
     with c2:
-        period = st.selectbox("Lookback period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
+        period = st.selectbox(
+            "Lookback period",
+            ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
+            index=3,
+            help=PORTFOLIO_TOOLTIPS["Lookback period"],
+        )
 
     with c3:
         interval = st.selectbox(
             "Frequency",
             ["1d", "1wk", "1mo"],
             index=0,
-            help="Each point is one observation at the selected frequency.",
+            help=PORTFOLIO_TOOLTIPS["Frequency"],
         )
 
     st.caption(
         f"Point meaning: each point corresponds to one {interval} observation, used for prices, returns, and rebalancing."
     )
 
-    # Parse tickers
     tickers = [t.strip() for t in tickers_txt.split(",") if t.strip()]
-    tickers = list(dict.fromkeys(tickers))  # unique, preserve order
+    tickers = list(dict.fromkeys(tickers))
 
     if len(tickers) < 3:
         st.error("Please provide at least 3 tickers.")
         return
 
     # ---- Portfolio parameters ----
-    st.subheader("Portfolio parameters")
+    st.subheader("Portfolio parameters", help="Set allocation and rebalancing rules for the portfolio.")
 
     p1, p2, p3 = st.columns(3)
     with p1:
-        allocation_rule = st.selectbox("Allocation rule", ["Equal weight", "Custom weights"], index=1)
+        allocation_rule = st.selectbox(
+            "Allocation rule",
+            ["Equal weight", "Custom weights"],
+            index=1,
+            help=PORTFOLIO_TOOLTIPS["Allocation rule"],
+        )
     with p2:
-        rebal_rule = st.selectbox("Rebalancing frequency", ["Daily", "Weekly", "Monthly"], index=2)
+        rebal_rule = st.selectbox(
+            "Rebalancing frequency",
+            ["Daily", "Weekly", "Monthly"],
+            index=2,
+            help=PORTFOLIO_TOOLTIPS["Rebalancing frequency"],
+        )
     with p3:
-        initial_capital = st.number_input("Initial capital (USD)", min_value=100.0, value=10_000.0, step=500.0)
+        initial_capital = st.number_input(
+            "Initial capital (USD)",
+            min_value=100.0,
+            value=10_000.0,
+            step=500.0,
+            help=PORTFOLIO_TOOLTIPS["Initial capital"],
+        )
 
-    weights = {}
+    # weights input
     if allocation_rule == "Equal weight":
         weights = {t: 1.0 / len(tickers) for t in tickers}
         st.caption(f"Equal weight: {1.0/len(tickers):.3f} per asset.")
     else:
         st.caption("Custom weights are normalized to sum to 1.")
         cols = st.columns(len(tickers))
+        weights = {}
         for i, t in enumerate(tickers):
             default_w = float(DEFAULT_WEIGHTS.get(t, 0.0))
             with cols[i]:
@@ -320,7 +372,7 @@ def portfolio_page():
                     min_value=0.0,
                     value=default_w,
                     step=0.05,
-                    help="Weight before normalization",
+                    help="Weight before normalization.",
                 )
 
     weights = _normalize_weights(weights)
@@ -328,8 +380,9 @@ def portfolio_page():
         st.error("Invalid weights (sum must be > 0).")
         return
 
-    # ---- Live quotes block ----
-    st.subheader("Current values")
+    # ---- Live quotes ----
+    st.subheader("Current values", help="Latest available quote from yfinance (best-effort).")
+
     qcols = st.columns(min(3, len(tickers)))
     for i, t in enumerate(tickers):
         with qcols[i % len(qcols)]:
@@ -346,7 +399,7 @@ def portfolio_page():
                 st.caption("Last update: N/A")
 
     # ---- Load historical prices ----
-    st.subheader("Historical data & portfolio simulation")
+    st.subheader("Historical data & portfolio simulation", help="Download prices, align dates across assets, then simulate the portfolio.")
 
     price_series = {}
     failed = []
@@ -354,7 +407,7 @@ def portfolio_page():
     for t in tickers:
         try:
             df = load_price_history(t, period=period, interval=interval)
-            if df.empty or "price" not in df.columns:
+            if df is None or df.empty or "price" not in df.columns:
                 failed.append(t)
                 continue
             s = df["price"].dropna()
@@ -378,11 +431,13 @@ def portfolio_page():
         st.error("Not enough aligned data across assets. Try a longer lookback period or different tickers.")
         return
 
-    # Keep weights only for assets that survived
-    weights = {t: weights.get(t, 0.0) for t in prices_df.columns}
-    weights = _normalize_weights(weights)
+    # keep weights only for assets present
+    weights = _normalize_weights({t: weights.get(t, 0.0) for t in prices_df.columns})
+    if not weights:
+        st.error("Weights invalid after excluding failed tickers.")
+        return
 
-    # Simulate portfolio
+    # simulate
     port_value = simulate_portfolio(
         prices_df=prices_df,
         weights=weights,
@@ -393,8 +448,11 @@ def portfolio_page():
         st.error("Portfolio simulation failed (no returns).")
         return
 
-    # ---- Main chart (requirement) ----
-    st.subheader("Main chart: asset prices + portfolio cumulative value")
+    # ---- Main chart ----
+    st.subheader(
+        "Main chart: asset prices + portfolio cumulative value",
+        help=PORTFOLIO_TOOLTIPS["Main chart"],
+    )
     plot_multi_assets_and_portfolio(prices_df, port_value)
 
     st.caption(
@@ -402,13 +460,17 @@ def portfolio_page():
         "Portfolio value starts from the initial capital and is rebalanced at the chosen frequency."
     )
 
-      # ---- Visual comparisons: normalized prices vs portfolio ----
-    st.subheader("Comparison view: normalized assets vs portfolio (base 100)")
+    # ---- Normalized comparison ----
+    st.subheader(
+        "Comparison view: normalized assets vs portfolio (base 100)",
+        help=PORTFOLIO_TOOLTIPS["Normalized comparison"],
+    )
+
     common = prices_df.index.intersection(port_value.index)
     norm_assets = (prices_df.loc[common] / prices_df.loc[common].iloc[0]) * 100.0
     norm_port = (port_value.loc[common] / port_value.loc[common].iloc[0]) * 100.0
 
-    idx_name = norm_assets.index.name or "date"
+    idx_name = norm_assets.index.name or "index"
 
     norm_long = (
         norm_assets.reset_index()
@@ -416,7 +478,6 @@ def portfolio_page():
         .rename(columns={idx_name: "date"})
     )
 
-    # FIX: do not reference port_long before it exists
     port_long = norm_port.to_frame("value").reset_index()
     port_long = port_long.rename(columns={port_long.columns[0]: "date"})
     port_long["series"] = "Portfolio (base 100)"
@@ -435,38 +496,40 @@ def portfolio_page():
     )
     st.altair_chart(comp, use_container_width=True)
 
-    # ---- Portfolio metrics ----
-    st.subheader("Portfolio metrics")
+    # ---- Metrics ----
+    st.subheader("Portfolio metrics", help="Key risk/return metrics computed from the portfolio value series.")
 
+    port_metrics = compute_metrics(port_value)
+
+    # correlation
     rets = prices_df.pct_change().dropna()
     corr = rets.corr()
 
     m1, m2, m3 = st.columns(3)
 
-    port_metrics = compute_metrics(port_value)
-
     with m1:
-        st.metric("Portfolio annual return", f"{port_metrics.get('annual_return', float('nan'))*100:.2f}%")
-        st.metric("Portfolio annual volatility", f"{port_metrics.get('annual_vol', float('nan'))*100:.2f}%")
+        metric_with_help("Portfolio annual return", f"{port_metrics.get('annual_return', float('nan'))*100:.2f}%")
+        metric_with_help("Portfolio annual volatility", f"{port_metrics.get('annual_vol', float('nan'))*100:.2f}%")
 
     with m2:
-        st.metric("Portfolio Sharpe", f"{port_metrics.get('sharpe', float('nan')):.2f}")
-        st.metric("Portfolio max drawdown", f"{port_metrics.get('max_drawdown', float('nan'))*100:.2f}%")
+        metric_with_help("Portfolio Sharpe", f"{port_metrics.get('sharpe', float('nan')):.2f}")
+        metric_with_help("Portfolio max drawdown", f"{port_metrics.get('max_drawdown', float('nan'))*100:.2f}%")
 
-    vol_assets = rets.std() * np.sqrt(252)
-    w_vec = np.array([weights.get(t, 0.0) for t in prices_df.columns])
-    weighted_avg_vol = float(np.dot(w_vec, vol_assets.values))
+    vol_assets = rets.std() * np.sqrt(252.0)
+    w_vec = np.array([weights.get(t, 0.0) for t in prices_df.columns], dtype=float)
+    weighted_avg_vol = float(np.dot(w_vec, vol_assets.values)) if len(vol_assets.values) else float("nan")
     portfolio_vol = float(port_metrics.get("annual_vol", float("nan")))
 
     with m3:
-        st.metric("Weighted avg asset vol", f"{weighted_avg_vol*100:.2f}%")
+        metric_with_help("Weighted avg asset vol", f"{weighted_avg_vol*100:.2f}%")
         if np.isfinite(portfolio_vol) and np.isfinite(weighted_avg_vol) and weighted_avg_vol > 0:
             div_effect = 1.0 - (portfolio_vol / weighted_avg_vol)
-            st.metric("Diversification effect", f"{div_effect*100:.2f}%")
+            metric_with_help("Diversification effect", f"{div_effect*100:.2f}%")
         else:
-            st.metric("Diversification effect", "N/A")
+            metric_with_help("Diversification effect", "N/A")
 
     st.markdown("### Correlation matrix")
+    st.caption("**Correlation matrix**", help=PORTFOLIO_TOOLTIPS["Correlation matrix"])
     plot_corr_heatmap(corr)
 
     st.caption(
@@ -474,8 +537,9 @@ def portfolio_page():
         "Correlation matrix computed from aligned returns at the selected frequency."
     )
 
-    # ---- Show the chosen weights ----
-    st.subheader("Weights used (normalized)")
+    # ---- Weights ----
+    st.subheader("Weights used (normalized)", help=PORTFOLIO_TOOLTIPS["Weights used"])
+
     wdf = (
         pd.DataFrame({"ticker": list(weights.keys()), "weight": list(weights.values())})
         .sort_values("weight", ascending=False)
@@ -484,4 +548,3 @@ def portfolio_page():
     wdf["weight_%"] = (wdf["weight"] * 100.0).round(2)
 
     st.dataframe(wdf[["ticker", "weight_%"]], hide_index=True)
-

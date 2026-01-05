@@ -395,7 +395,7 @@ def portfolio_page():
         "Portfolio value starts from the initial capital and is rebalanced at the chosen frequency."
     )
 
-    # ---- Visual comparisons: normalized prices vs portfolio ----
+      # ---- Visual comparisons: normalized prices vs portfolio ----
     st.subheader("Comparison view: normalized assets vs portfolio (base 100)")
     common = prices_df.index.intersection(port_value.index)
     norm_assets = (prices_df.loc[common] / prices_df.loc[common].iloc[0]) * 100.0
@@ -408,7 +408,10 @@ def portfolio_page():
         .melt(id_vars=idx_name, var_name="series", value_name="value")
         .rename(columns={idx_name: "date"})
     )
-    port_long = norm_port.to_frame("value").reset_index().rename(columns={port_long.columns[0]: "date"})
+
+    # FIX: do not reference port_long before it exists
+    port_long = norm_port.to_frame("value").reset_index()
+    port_long = port_long.rename(columns={port_long.columns[0]: "date"})
     port_long["series"] = "Portfolio (base 100)"
 
     norm_all = pd.concat([norm_long, port_long], ignore_index=True)
@@ -472,4 +475,5 @@ def portfolio_page():
         .reset_index(drop=True)
     )
     wdf["weight_%"] = (wdf["weight"] * 100.0).round(2)
+
     st.dataframe(wdf[["ticker", "weight_%"]], hide_index=True)

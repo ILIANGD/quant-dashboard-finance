@@ -40,6 +40,10 @@ def load_price_history(
     if df is None or df.empty:
         return pd.DataFrame()
 
+    # yfinance sometimes returns MultiIndex columns
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     if "Close" not in df.columns:
         return pd.DataFrame()
 
@@ -50,6 +54,7 @@ def load_price_history(
     try:
         out.index = pd.to_datetime(out.index).tz_localize(None)
     except Exception:
+        # If already tz-naive or conversion fails, keep as-is
         pass
 
     return out.dropna()
@@ -58,34 +63,43 @@ def load_price_history(
 def load_live_quote(ticker: str) -> dict:
     """
     Returns a live-ish quote (last price) + timestamp.
-    Uses yfinance (public API wrapper).
+
+    Robust fallback:
+    1) fast_info last_price
+    2) intraday 1-minute close (last available)
+    3) last daily close (last 5 days)
     """
     t = yf.Ticker(ticker)
-
     last = None
 
-    # 1) Try fast_info first (fastest when available)
+    # 1) Try fast_info (quick, but can be missing)
     try:
-        fi = getattr(t, "fast_info", {})
+        fi = getattr(t, "fast_info", {}) or {}
         last = fi.get("last_price", None)
+        if last is not None:
+            last = float(last)
     except Exception:
         last = None
 
-    # 2) Try intraday 1m (more reliable)
+    # 2) Try intraday 1m
     if last is None:
         try:
             df = t.history(period="1d", interval="1m")
             if isinstance(df, pd.DataFrame) and (not df.empty) and ("Close" in df.columns):
-                last = float(df["Close"].dropna().iloc[-1])
+                close_series = df["Close"].dropna()
+                if not close_series.empty:
+                    last = float(close_series.iloc[-1])
         except Exception:
             last = None
 
-    # 3) Fallback: last daily close (in case intraday is unavailable)
+    # 3) Fallback: last daily close
     if last is None:
         try:
             df = t.history(period="5d", interval="1d")
             if isinstance(df, pd.DataFrame) and (not df.empty) and ("Close" in df.columns):
-                last = float(df["Close"].dropna().iloc[-1])
+                close_series = df["Close"].dropna()
+                if not close_series.empty:
+                    last = float(close_series.iloc[-1])
         except Exception:
             last = None
 

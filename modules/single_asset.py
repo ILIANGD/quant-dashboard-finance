@@ -185,7 +185,7 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
 # =========================
 
 def single_asset_page():
-    st.title("Single Asset Analysis")
+    st.title("Single Asset")
     st.autorefresh = st_autorefresh(interval=300_000, key="auto_refresh_5min")
 
     # ==========================================
@@ -196,14 +196,14 @@ def single_asset_page():
         
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            default_ticker = st.query_params.get("ticker", "BZ=F")
-            ticker = st.text_input("Ticker", value=default_ticker)
-            if ticker != st.query_params.get("ticker"):
-                st.query_params["ticker"] = ticker
+            default_ticker = st.query_params.get("Asset", "BZ=F")
+            ticker = st.text_input("Asset", value=default_ticker)
+            if ticker != st.query_params.get("Asset"):
+                st.query_params["Asset"] = ticker
             
         with c2: period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y"], index=4)
         with c3: interval = st.selectbox("Freq", ["1d", "1wk", "1mo"], index=0)
-        with c4: strategy_name = st.selectbox("Strategy", ["Buy & Hold", "Momentum (MA Cross)", "Breakout"], index=0)
+        with c4: strategy_name = st.selectbox("Backtesting Strategy", ["Buy & Hold", "Momentum (MA Cross)", "Breakout"], index=0)
 
         st.divider()
         

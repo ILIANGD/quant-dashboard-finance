@@ -187,6 +187,7 @@ ASSET_DB = {
 }
 
 # Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
+# Categories are sorted alphabetically by key definition above
 FLAT_ASSETS = {}
 for category in sorted(ASSET_DB.keys()):
     items = ASSET_DB[category]
@@ -197,17 +198,20 @@ for category in sorted(ASSET_DB.keys()):
 # Reverse lookup (Ticker -> Label) for URL handling
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 
+
 # =========================
 # Helpers & Logic
 # =========================
 
 def _normalize_weights(w: dict) -> dict:
+    """Keep only non-negative numbers, normalize to sum to 1."""
     ww = {}
     for k, v in w.items():
         try:
             vv = float(v)
             if vv >= 0: ww[k] = vv
         except: continue
+    
     s = sum(ww.values())
     if s <= 0: return {k: 1.0/len(ww) for k in ww} if ww else {}
     return {k: v/s for k, v in ww.items()}
@@ -231,18 +235,22 @@ def simulate_portfolio(prices_df: pd.DataFrame, weights: dict, rebal_rule: str, 
     w_target = _normalize_weights({t: weights.get(t, 0.0) for t in tickers})
     w_vec = np.array([w_target.get(t, 0.0) for t in tickers])
     
+    # Simple rebalancing logic
     rdates = set(rebalance_dates(rets.index, rebal_rule))
+    
     current_w = w_vec.copy()
     port_rets = []
     
     for dt, row in rets.iterrows():
         if dt in rdates:
-            current_w = w_vec.copy() # Reset
+            current_w = w_vec.copy() # Reset to target
         
+        # Period return
         r = row.values
         port_ret = np.dot(current_w, r)
         port_rets.append(port_ret)
         
+        # Update weights based on asset performance (Drift)
         current_w = current_w * (1 + r) / (1 + port_ret)
 
     port_series = pd.Series(port_rets, index=rets.index)
@@ -296,21 +304,18 @@ def portfolio_page():
         
         with c1:
             # 1. Parsing URL Tickers
-            # Expected format: "TICKER1,TICKER2,TICKER3"
             url_tickers_str = st.query_params.get("tickers", "BZ=F,GC=F,HG=F")
             url_tickers = [t.strip() for t in url_tickers_str.split(",") if t.strip()]
             
-            # 2. Separate Known vs Custom
+            # 2. Match URL tickers to known labels if possible
             default_options = []
-            custom_tickers_list = []
-            
             for t in url_tickers:
                 if t in TICKER_TO_LABEL:
                     default_options.append(TICKER_TO_LABEL[t])
-                else:
-                    custom_tickers_list.append(t)
+                # If unknown/custom in URL, we can't easily show it in multiselect restricted to keys
+                # So we focus on the curated list as requested.
             
-            # 3. Multiselect Widget
+            # 3. Multiselect Widget (NO Custom Input)
             selected_labels = st.multiselect(
                 "Select Assets (3 to 8)",
                 options=FLAT_ASSETS.keys(),
@@ -318,23 +323,11 @@ def portfolio_page():
                 max_selections=8
             )
             
-            # 4. Optional Custom Tickers Input
-            custom_str = st.text_input(
-                "Add Custom Tickers (comma separated, optional)", 
-                value=",".join(custom_tickers_list),
-                help="Add tickers not in the list, e.g., 'AAPL, MSFT'"
-            )
+            # 4. Resolve Selection
+            final_tickers = [FLAT_ASSETS[l] for l in selected_labels]
+            final_tickers = list(dict.fromkeys(final_tickers)) # Deduplicate
             
-            # 5. Combine & Validation
-            selected_tickers = [FLAT_ASSETS[l] for l in selected_labels]
-            if custom_str:
-                custom_parsed = [t.strip().upper() for t in custom_str.split(",") if t.strip()]
-                selected_tickers.extend(custom_parsed)
-            
-            # Deduplicate preserving order
-            final_tickers = list(dict.fromkeys(selected_tickers))
-            
-            # Update URL
+            # 5. Update URL
             new_url_str = ",".join(final_tickers)
             if new_url_str != url_tickers_str:
                 st.query_params["tickers"] = new_url_str
@@ -360,15 +353,12 @@ def portfolio_page():
         if len(final_tickers) < 3:
             st.error(f"Please select at least 3 assets. Currently selected: {len(final_tickers)}")
             return
-        if len(final_tickers) > 8:
-            st.warning(f"You have selected {len(final_tickers)} assets. Performance might be slow.")
-
+        
         # Custom Weights Inputs
         weights = {}
         if alloc_type == "Custom Weights":
             with sc3:
                 st.caption("Weights (will be normalized)")
-                # Dynamic columns based on count
                 cols = st.columns(len(final_tickers))
                 for i, t in enumerate(final_tickers):
                     with cols[i]:
@@ -456,17 +446,19 @@ def portfolio_page():
     id_var = df_reset.columns[0]
     df_melt = df_reset.melt(id_vars=id_var, var_name="Asset", value_name="Value").rename(columns={id_var: "date"})
 
-    highlight = alt.condition(alt.datum.Asset == 'Portfolio', alt.value("#FF4B4B"), alt.value("#4A90E2"))
+    # Highlight Logic: Portfolio = Thicker Line + Explicit Color if needed, Assets = Distinct Colors
+    # Note: We use the 'Asset' field for color to get distinct colors for everything.
+    # We use strokeWidth to emphasize Portfolio.
+    
     stroke_width = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1))
-    opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.5))
+    opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.7))
 
     c_norm = alt.Chart(df_melt).mark_line().encode(
         x=alt.X("date:T", axis=alt.Axis(title=None)),
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
-        color=highlight, 
+        color=alt.Color("Asset:N", legend=alt.Legend(orient="bottom")), # DISTINCT COLORS FOR ALL
         strokeWidth=stroke_width,
         opacity=opacity,
-        detail="Asset",
         tooltip=["date:T", "Asset:N", alt.Tooltip("Value:Q", format=".1f")]
     ).properties(height=400)
 

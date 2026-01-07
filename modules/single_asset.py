@@ -5,6 +5,13 @@ from streamlit_autorefresh import st_autorefresh
 import altair as alt
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
+import locale
+
+# Tenter de définir la locale pour le formatage monétaire, sinon utiliser un format par défaut
+try:
+    locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+except locale.Error:
+    pass # Utiliser le format par défaut si la locale n'est pas dispo
 
 from services.data_loader import load_price_history, load_live_quote
 
@@ -196,7 +203,7 @@ def single_asset_page():
             if ticker != st.query_params.get("ticker"):
                 st.query_params["ticker"] = ticker
             
-        with c2: period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y"], index=2)
+        with c2: period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y"], index=4) # Default to 5y for better forecast context
         with c3: interval = st.selectbox("Freq", ["1d", "1wk", "1mo"], index=0)
         with c4: strategy_name = st.selectbox("Strategy", ["Buy & Hold", "Momentum (MA Cross)", "Breakout"], index=0)
 
@@ -221,7 +228,7 @@ def single_asset_page():
         with ac2:
             st.markdown("**Forecast Settings**")
             fc1, fc2 = st.columns(2)
-            with fc1: horizon_fc = st.slider("Horizon (periods)", 5, 60, 20)
+            with fc1: horizon_fc = st.slider("Horizon (periods)", 5, 120, 60) # Default 60 for better view
             with fc2: log_fc = st.toggle("Log-Space Model", value=True)
 
     # Load Data
@@ -270,12 +277,11 @@ def single_asset_page():
             st.rerun()
             
     with col_m:
-        # Custom Metric Grid for Asset (WITH MAX DRAWDOWN)
+        # Custom Metric Grid for Asset
         m1, m2, m3, m4 = st.columns(4)
         with m1: metric_card("Return (Ann.)", f"{metrics_asset['annual_return']:.2%}")
         with m2: metric_card("Volatility", f"{metrics_asset['annual_vol']:.2%}")
         with m3: metric_card("Sharpe", f"{metrics_asset['sharpe']:.2f}")
-        # AJOUT DEMANDÉ : MAX DRAWDOWN
         with m4: metric_card("Max Drawdown", f"{metrics_asset['max_drawdown']:.2%}", "Max loss from peak")
 
     # ==========================================
@@ -299,7 +305,7 @@ def single_asset_page():
     display_metrics_grid(metrics_strat)
 
     # ==========================================
-    # 4. FORECAST (Updated)
+    # 4. FORECAST (Updated to match image style)
     # ==========================================
     st.divider()
     st.header("Forecast Analysis")
@@ -309,33 +315,52 @@ def single_asset_page():
 
     if not fc_df.empty:
         # Prepare Data for Plotting
-        hist_data = prices.iloc[-50:].to_frame("price").reset_index() # Show last 50 points context
+        # Show more historical context for better visualization
+        hist_data = prices.iloc[-252:].to_frame("price").reset_index() 
         hist_data.columns = ["date", "price"]
         
         fc_data = fc_df.reset_index().rename(columns={"index": "date"})
         
         # --- ALTAIR CHART ---
-        # 1. Historical Line
-        c_hist = alt.Chart(hist_data).mark_line(color="gray", opacity=0.8).encode(
-            x=alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date")),
-            y=alt.Y("price:Q", axis=alt.Axis(format="$f", title="Price ($)"))
+        # Common Axis Definitions
+        x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
+        y_axis = alt.Y("price:Q", axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
+
+        # 1. Historical Line (Blue, Solid)
+        c_hist = alt.Chart(hist_data).mark_line().encode(
+            x=x_axis,
+            y=y_axis,
+            color=alt.value("#4A90E2"), # Blue color like in the image
+            stroke=alt.datum("Prix historique") # For legend
         )
         
-        # 2. Forecast Line
-        c_fc = alt.Chart(fc_data).mark_line(color="#2980b9").encode(
-            x="date:T", y="forecast:Q"
+        # 2. Forecast Line (Green, Dashed)
+        c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(
+            x=x_axis,
+            y=alt.Y("forecast:Q"),
+            color=alt.value("#2ECC71"), # Green color like in the image
+            stroke=alt.datum("Prédiction") # For legend
         )
         
-        # 3. Confidence Interval Area
-        c_band = alt.Chart(fc_data).mark_area(opacity=0.3, color="#3498db").encode(
-            x="date:T", y="lower:Q", y2="upper:Q"
+        # 3. Confidence Interval Area (Light Green, Shaded)
+        c_band = alt.Chart(fc_data).mark_area(opacity=0.3).encode(
+            x=x_axis,
+            y=alt.Y("lower:Q"),
+            y2=alt.Y("upper:Q"),
+            color=alt.value("#2ECC71"), # Same green
+            fill=alt.datum("Intervalle de confiance 95%") # For legend
         )
 
-        # Combine & Style (Height 500px, No Legend)
-        chart = (c_hist + c_band + c_fc).properties(height=500).configure_legend(disable=True)
+        # Combine & Style (Height 500px, Legend at bottom)
+        chart = alt.layer(c_hist, c_band, c_fc).properties(height=500).configure_legend(
+            orient='bottom',
+            title=None,
+            labelFontSize=12,
+        ).configure_axis(
+            grid=True, gridOpacity=0.3
+        )
         
         st.altair_chart(chart, use_container_width=True)
-        st.caption("Gray: Historical Data (last 50 pts) | Blue Line: ML Forecast | Blue Band: 95% Confidence Interval")
 
         # --- FORECAST PERFORMANCE ---
         st.subheader("Model Performance (Fit Quality)")

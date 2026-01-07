@@ -4,6 +4,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import altair as alt
 
+# Assure-toi que le fichier data_loader est bien mis à jour !
 from services.data_loader import load_price_history, load_live_quote
 
 
@@ -153,10 +154,6 @@ def forecast_linear_trend_with_ci(
 ) -> pd.DataFrame:
     """
     Linear regression trend forecast on time index with approximate prediction intervals.
-
-    - Model: y(t) = a + b*t (+ noise)
-    - y is log(price) if use_log else price
-    - CI is approximate using residual std and normal quantile.
     """
     s = prices.dropna().copy()
     if len(s) < 20:
@@ -262,17 +259,34 @@ def single_asset_page():
         try:
             st.session_state[quote_key] = load_live_quote(ticker)
         except Exception:
-            st.session_state[quote_key] = {"last_price": None, "asof_utc": "N/A"}
+            st.session_state[quote_key] = {"last_price": None, "prev_close": None, "asof_utc": "N/A"}
 
     quote = st.session_state[quote_key]
+    
+    last_price = quote.get("last_price")
+    prev_close = quote.get("prev_close")
+
+    # Calculate Delta (Change)
+    delta_val = None
+    delta_str = ""
+    if last_price is not None and prev_close is not None and prev_close != 0:
+        diff = last_price - prev_close
+        pct = diff / prev_close
+        # Format string like: "-4.90 (-1.83%)"
+        delta_str = f"{diff:.2f} ({pct:.2%})"
+        delta_val = diff # st.metric uses this to determine color (green/red)
 
     c1, c2, c3 = st.columns([2, 1, 2])
     with c1:
-        last_price = quote.get("last_price")
         if last_price is None:
             st.metric("Current price", "N/A")
         else:
-            st.metric("Current price", f"{float(last_price):.2f} USD")
+            # Displays Price and Delta (Green/Red automatically based on sign)
+            st.metric(
+                label="Current price", 
+                value=f"{float(last_price):.2f} USD", 
+                delta=delta_str
+            )
 
     with c2:
         if st.button("Refresh", use_container_width=True, help="Reload the live quote now."):
@@ -280,7 +294,7 @@ def single_asset_page():
             try:
                 st.session_state[quote_key] = load_live_quote(ticker)
             except Exception:
-                st.session_state[quote_key] = {"last_price": None, "asof_utc": "N/A"}
+                st.session_state[quote_key] = {"last_price": None, "prev_close": None, "asof_utc": "N/A"}
             st.rerun()
 
     with c3:

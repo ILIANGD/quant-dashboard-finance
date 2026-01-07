@@ -17,142 +17,187 @@ from services.data_loader import load_price_history, load_live_quote
 
 
 # =========================
-# ASSET DATABASE (No Emojis)
+# ASSET DATABASE (Expanded & Sorted)
 # =========================
 
 ASSET_DB = {
-    "INDICES - US": {
-        "S&P 500": "^GSPC",
-        "Nasdaq 100": "^NDX",
-        "Dow Jones 30": "^DJI",
-        "Russell 2000": "^RUT",
-        "VIX (Volatility)": "^VIX",
-        "NYSE Composite": "^NYA"
+    "BONDS & RATES": {
+        "German 10Y Bund Yield": "^TNX", # Proxy often used if exact ticker not available
+        "US Treasury Yield 10 Years": "^TNX",
+        "US Treasury Yield 30 Years": "^TYX",
+        "US Treasury Yield 5 Years": "^FVX"
     },
-    "INDICES - EUROPE": {
-        "CAC 40 (France)": "^FCHI",
-        "DAX (Germany)": "^GDAXI",
-        "FTSE 100 (UK)": "^FTSE",
-        "Euro Stoxx 50": "^STOXX50E",
-        "IBEX 35 (Spain)": "^IBEX",
-        "FTSE MIB (Italy)": "FTSEMIB.MI",
-        "AEX (Netherlands)": "^AEX",
-        "SMI (Switzerland)": "^SSMI"
-    },
-    "INDICES - ASIA & PACIFIC": {
-        "Nikkei 225 (Japan)": "^N225",
-        "Hang Seng (Hong Kong)": "^HSI",
-        "Shanghai Composite (China)": "000001.SS",
-        "Shenzhen Component (China)": "399001.SZ",
-        "Nifty 50 (India)": "^NSEI",
-        "BSE SENSEX (India)": "^BSESN",
-        "KOSPI (South Korea)": "^KS11",
-        "ASX 200 (Australia)": "^AXJO",
-        "STI (Singapore)": "^STI"
-    },
-    "INDICES - AMERICAS (NON-US)": {
-        "TSX Composite (Canada)": "^GSPTSE",
-        "Bovespa (Brazil)": "^BVSP",
-        "Merval (Argentina)": "^MERV",
-        "IPC (Mexico)": "^MXX"
+    "COMMODITIES - AGRI": {
+        "Cocoa": "CC=F",
+        "Coffee": "KC=F",
+        "Corn": "ZC=F",
+        "Cotton": "CT=F",
+        "Lean Hogs": "HE=F",
+        "Live Cattle": "LE=F",
+        "Lumber": "LBS=F",
+        "Oats": "ZO=F",
+        "Orange Juice": "OJ=F",
+        "Rough Rice": "ZR=F",
+        "Soybean Meal": "ZM=F",
+        "Soybean Oil": "ZL=F",
+        "Soybeans": "ZS=F",
+        "Sugar": "SB=F",
+        "Wheat": "ZW=F"
     },
     "COMMODITIES - ENERGY": {
         "Brent Crude Oil": "BZ=F",
-        "WTI Crude Oil": "CL=F",
-        "Natural Gas": "NG=F",
+        "Gasoline (RBOB)": "RB=F",
         "Heating Oil": "HO=F",
-        "Gasoline": "RB=F"
+        "Natural Gas": "NG=F",
+        "WTI Crude Oil": "CL=F"
     },
     "COMMODITIES - METALS": {
-        "Gold": "GC=F",
-        "Silver": "SI=F",
+        "Aluminum": "ALI=F",
         "Copper": "HG=F",
-        "Platinum": "PL=F",
+        "Gold": "GC=F",
         "Palladium": "PA=F",
-        "Aluminum": "ALI=F"
-    },
-    "COMMODITIES - AGRI": {
-        "Corn": "ZC=F",
-        "Soybeans": "ZS=F",
-        "Wheat": "ZW=F",
-        "Coffee": "KC=F",
-        "Sugar": "SB=F",
-        "Cocoa": "CC=F",
-        "Cotton": "CT=F",
-        "Live Cattle": "LE=F"
-    },
-    "FOREX - MAJORS": {
-        "EUR/USD": "EURUSD=X",
-        "GBP/USD": "GBPUSD=X",
-        "USD/JPY": "JPY=X",
-        "USD/CHF": "CHF=X",
-        "AUD/USD": "AUDUSD=X",
-        "USD/CAD": "CAD=X",
-        "NZD/USD": "NZDUSD=X"
-    },
-    "FOREX - MINORS/EM": {
-        "EUR/GBP": "EURGBP=X",
-        "EUR/JPY": "EURJPY=X",
-        "GBP/JPY": "GBPJPY=X",
-        "USD/CNY": "CNY=X",
-        "USD/HKD": "HKD=X",
-        "USD/SGD": "SGD=X",
-        "USD/INR": "INR=X",
-        "USD/MXN": "MXN=X",
-        "USD/BRL": "BRL=X",
-        "USD/TRY": "TRY=X",
-        "USD/ZAR": "ZAR=X"
+        "Platinum": "PL=F",
+        "Silver": "SI=F"
     },
     "CRYPTO": {
-        "Bitcoin": "BTC-USD",
-        "Ethereum": "ETH-USD",
-        "Solana": "SOL-USD",
-        "XRP": "XRP-USD",
-        "BNB": "BNB-USD",
-        "Cardano": "ADA-USD",
-        "Dogecoin": "DOGE-USD",
         "Avalanche": "AVAX-USD",
+        "Binance Coin": "BNB-USD",
+        "Bitcoin": "BTC-USD",
+        "Bitcoin Cash": "BCH-USD",
+        "Cardano": "ADA-USD",
+        "Chainlink": "LINK-USD",
+        "Dogecoin": "DOGE-USD",
+        "Ethereum": "ETH-USD",
+        "Litecoin": "LTC-USD",
         "Polkadot": "DOT-USD",
-        "Chainlink": "LINK-USD"
+        "Polygon": "MATIC-USD",
+        "Shiba Inu": "SHIB-USD",
+        "Solana": "SOL-USD",
+        "Uniswap": "UNI-USD",
+        "XRP": "XRP-USD"
     },
-    "BONDS (US TREASURY)": {
-        "10-Year Treasury Yield": "^TNX",
-        "30-Year Treasury Yield": "^TYX",
-        "5-Year Treasury Yield": "^FVX",
-        "13-Week Treasury Bill": "^IRX"
+    "FOREX - MAJORS": {
+        "AUD/USD": "AUDUSD=X",
+        "EUR/USD": "EURUSD=X",
+        "GBP/USD": "GBPUSD=X",
+        "NZD/USD": "NZDUSD=X",
+        "USD/CAD": "CAD=X",
+        "USD/CHF": "CHF=X",
+        "USD/JPY": "JPY=X"
     },
-    "STOCKS - US TECH": {
-        "Apple": "AAPL",
-        "Microsoft": "MSFT",
-        "Nvidia": "NVDA",
-        "Google (Alphabet)": "GOOGL",
-        "Amazon": "AMZN",
-        "Tesla": "TSLA",
-        "Meta": "META",
-        "Netflix": "NFLX",
-        "AMD": "AMD",
-        "Intel": "INTC"
+    "FOREX - CROSSES & EXOTICS": {
+        "AUD/JPY": "AUDJPY=X",
+        "EUR/GBP": "EURGBP=X",
+        "EUR/JPY": "EURJPY=X",
+        "EUR/SEK": "EURSEK=X",
+        "GBP/JPY": "GBPJPY=X",
+        "USD/BRL (Brazil)": "BRL=X",
+        "USD/CNY (China)": "CNY=X",
+        "USD/HKD (Hong Kong)": "HKD=X",
+        "USD/INR (India)": "INR=X",
+        "USD/KRW (South Korea)": "KRW=X",
+        "USD/MXN (Mexico)": "MXN=X",
+        "USD/SGD (Singapore)": "SGD=X",
+        "USD/TRY (Turkey)": "TRY=X",
+        "USD/ZAR (South Africa)": "ZAR=X"
     },
-    "STOCKS - FRANCE": {
-        "LVMH": "MC.PA",
-        "TotalEnergies": "TTE.PA",
-        "Sanofi": "SAN.PA",
-        "Airbus": "AIR.PA",
-        "L'Oreal": "OR.PA",
-        "Schneider Electric": "SU.PA",
+    "INDICES - AMERICAS": {
+        "Bovespa (Brazil)": "^BVSP",
+        "Dow Jones 30": "^DJI",
+        "IPC Mexico": "^MXX",
+        "Merval (Argentina)": "^MERV",
+        "Nasdaq 100": "^NDX",
+        "NYSE Composite": "^NYA",
+        "Russell 2000": "^RUT",
+        "S&P 500": "^GSPC",
+        "TSX Composite (Canada)": "^GSPTSE",
+        "VIX (Volatility)": "^VIX"
+    },
+    "INDICES - ASIA PACIFIC": {
+        "ASX 200 (Australia)": "^AXJO",
+        "BSE SENSEX (India)": "^BSESN",
+        "Hang Seng (Hong Kong)": "^HSI",
+        "KOSPI (South Korea)": "^KS11",
+        "Nifty 50 (India)": "^NSEI",
+        "Nikkei 225 (Japan)": "^N225",
+        "Shanghai Composite": "000001.SS",
+        "Shenzhen Component": "399001.SZ",
+        "STI (Singapore)": "^STI",
+        "TAIEX (Taiwan)": "^TWII"
+    },
+    "INDICES - EUROPE": {
+        "AEX (Netherlands)": "^AEX",
+        "BEL 20 (Belgium)": "^BFX",
+        "CAC 40 (France)": "^FCHI",
+        "DAX (Germany)": "^GDAXI",
+        "Euro Stoxx 50": "^STOXX50E",
+        "FTSE 100 (UK)": "^FTSE",
+        "FTSE MIB (Italy)": "FTSEMIB.MI",
+        "IBEX 35 (Spain)": "^IBEX",
+        "PSI 20 (Portugal)": "^PSI20",
+        "SMI (Switzerland)": "^SSMI"
+    },
+    "STOCKS - FRANCE (CAC 40)": {
         "Air Liquide": "AI.PA",
-        "Hermes": "RMS.PA",
+        "Airbus": "AIR.PA",
+        "AXA": "CS.PA",
         "BNP Paribas": "BNP.PA",
+        "Danone": "BN.PA",
+        "EssilorLuxottica": "EL.PA",
+        "Hermes": "RMS.PA",
+        "Kering": "KER.PA",
+        "L'Oreal": "OR.PA",
+        "LVMH": "MC.PA",
+        "Orange": "ORA.PA",
+        "Pernod Ricard": "RI.PA",
+        "Safran": "SAF.PA",
+        "Saint-Gobain": "SGO.PA",
+        "Sanofi": "SAN.PA",
+        "Schneider Electric": "SU.PA",
+        "TotalEnergies": "TTE.PA",
         "Vinci": "DG.PA"
+    },
+    "STOCKS - US TECH & GIANTS": {
+        "AMD": "AMD",
+        "Adobe": "ADBE",
+        "Airbnb": "ABNB",
+        "Alphabet (Google)": "GOOGL",
+        "Amazon": "AMZN",
+        "Apple": "AAPL",
+        "Berkshire Hathaway": "BRK-B",
+        "Broadcom": "AVGO",
+        "Coca-Cola": "KO",
+        "Costco": "COST",
+        "Eli Lilly": "LLY",
+        "Exxon Mobil": "XOM",
+        "JPMorgan Chase": "JPM",
+        "Johnson & Johnson": "JNJ",
+        "Mastercard": "MA",
+        "Meta Platforms": "META",
+        "Microsoft": "MSFT",
+        "Netflix": "NFLX",
+        "Nvidia": "NVDA",
+        "Oracle": "ORCL",
+        "PepsiCo": "PEP",
+        "Pfizer": "PFE",
+        "Procter & Gamble": "PG",
+        "Salesforce": "CRM",
+        "Tesla": "TSLA",
+        "Uber": "UBER",
+        "Visa": "V",
+        "Walmart": "WMT"
     }
 }
 
 # Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
+# Categories are sorted alphabetically by key definition above
 FLAT_ASSETS = {}
-for category, items in ASSET_DB.items():
-    for name, ticker in items.items():
-        label = f"{category} | {name} ({ticker})"
-        FLAT_ASSETS[label] = ticker
+for category in sorted(ASSET_DB.keys()):
+    items = ASSET_DB[category]
+    # Items are sorted alphabetically by Name
+    for name in sorted(items.keys()):
+        label = f"{category} | {name} ({items[name]})"
+        FLAT_ASSETS[label] = items[name]
 
 # Reverse lookup for URL handling (Ticker -> Label)
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
@@ -336,7 +381,8 @@ def single_asset_page():
     with st.container(border=True):
         st.subheader("Controls")
         
-        c1, c2, c3, c4 = st.columns(4)
+        # INCREASED WIDTH for Asset Selection (3 : 1 : 1 : 1)
+        c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
         with c1:
             # 1. Retrieve ticker from URL
             url_ticker = st.query_params.get("Asset", "BZ=F")

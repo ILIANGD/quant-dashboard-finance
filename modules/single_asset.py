@@ -17,6 +17,148 @@ from services.data_loader import load_price_history, load_live_quote
 
 
 # =========================
+# ASSET DATABASE (No Emojis)
+# =========================
+
+ASSET_DB = {
+    "INDICES - US": {
+        "S&P 500": "^GSPC",
+        "Nasdaq 100": "^NDX",
+        "Dow Jones 30": "^DJI",
+        "Russell 2000": "^RUT",
+        "VIX (Volatility)": "^VIX",
+        "NYSE Composite": "^NYA"
+    },
+    "INDICES - EUROPE": {
+        "CAC 40 (France)": "^FCHI",
+        "DAX (Germany)": "^GDAXI",
+        "FTSE 100 (UK)": "^FTSE",
+        "Euro Stoxx 50": "^STOXX50E",
+        "IBEX 35 (Spain)": "^IBEX",
+        "FTSE MIB (Italy)": "FTSEMIB.MI",
+        "AEX (Netherlands)": "^AEX",
+        "SMI (Switzerland)": "^SSMI"
+    },
+    "INDICES - ASIA & PACIFIC": {
+        "Nikkei 225 (Japan)": "^N225",
+        "Hang Seng (Hong Kong)": "^HSI",
+        "Shanghai Composite (China)": "000001.SS",
+        "Shenzhen Component (China)": "399001.SZ",
+        "Nifty 50 (India)": "^NSEI",
+        "BSE SENSEX (India)": "^BSESN",
+        "KOSPI (South Korea)": "^KS11",
+        "ASX 200 (Australia)": "^AXJO",
+        "STI (Singapore)": "^STI"
+    },
+    "INDICES - AMERICAS (NON-US)": {
+        "TSX Composite (Canada)": "^GSPTSE",
+        "Bovespa (Brazil)": "^BVSP",
+        "Merval (Argentina)": "^MERV",
+        "IPC (Mexico)": "^MXX"
+    },
+    "COMMODITIES - ENERGY": {
+        "Brent Crude Oil": "BZ=F",
+        "WTI Crude Oil": "CL=F",
+        "Natural Gas": "NG=F",
+        "Heating Oil": "HO=F",
+        "Gasoline": "RB=F"
+    },
+    "COMMODITIES - METALS": {
+        "Gold": "GC=F",
+        "Silver": "SI=F",
+        "Copper": "HG=F",
+        "Platinum": "PL=F",
+        "Palladium": "PA=F",
+        "Aluminum": "ALI=F"
+    },
+    "COMMODITIES - AGRI": {
+        "Corn": "ZC=F",
+        "Soybeans": "ZS=F",
+        "Wheat": "ZW=F",
+        "Coffee": "KC=F",
+        "Sugar": "SB=F",
+        "Cocoa": "CC=F",
+        "Cotton": "CT=F",
+        "Live Cattle": "LE=F"
+    },
+    "FOREX - MAJORS": {
+        "EUR/USD": "EURUSD=X",
+        "GBP/USD": "GBPUSD=X",
+        "USD/JPY": "JPY=X",
+        "USD/CHF": "CHF=X",
+        "AUD/USD": "AUDUSD=X",
+        "USD/CAD": "CAD=X",
+        "NZD/USD": "NZDUSD=X"
+    },
+    "FOREX - MINORS/EM": {
+        "EUR/GBP": "EURGBP=X",
+        "EUR/JPY": "EURJPY=X",
+        "GBP/JPY": "GBPJPY=X",
+        "USD/CNY": "CNY=X",
+        "USD/HKD": "HKD=X",
+        "USD/SGD": "SGD=X",
+        "USD/INR": "INR=X",
+        "USD/MXN": "MXN=X",
+        "USD/BRL": "BRL=X",
+        "USD/TRY": "TRY=X",
+        "USD/ZAR": "ZAR=X"
+    },
+    "CRYPTO": {
+        "Bitcoin": "BTC-USD",
+        "Ethereum": "ETH-USD",
+        "Solana": "SOL-USD",
+        "XRP": "XRP-USD",
+        "BNB": "BNB-USD",
+        "Cardano": "ADA-USD",
+        "Dogecoin": "DOGE-USD",
+        "Avalanche": "AVAX-USD",
+        "Polkadot": "DOT-USD",
+        "Chainlink": "LINK-USD"
+    },
+    "BONDS (US TREASURY)": {
+        "10-Year Treasury Yield": "^TNX",
+        "30-Year Treasury Yield": "^TYX",
+        "5-Year Treasury Yield": "^FVX",
+        "13-Week Treasury Bill": "^IRX"
+    },
+    "STOCKS - US TECH": {
+        "Apple": "AAPL",
+        "Microsoft": "MSFT",
+        "Nvidia": "NVDA",
+        "Google (Alphabet)": "GOOGL",
+        "Amazon": "AMZN",
+        "Tesla": "TSLA",
+        "Meta": "META",
+        "Netflix": "NFLX",
+        "AMD": "AMD",
+        "Intel": "INTC"
+    },
+    "STOCKS - FRANCE": {
+        "LVMH": "MC.PA",
+        "TotalEnergies": "TTE.PA",
+        "Sanofi": "SAN.PA",
+        "Airbus": "AIR.PA",
+        "L'Oreal": "OR.PA",
+        "Schneider Electric": "SU.PA",
+        "Air Liquide": "AI.PA",
+        "Hermes": "RMS.PA",
+        "BNP Paribas": "BNP.PA",
+        "Vinci": "DG.PA"
+    }
+}
+
+# Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
+FLAT_ASSETS = {}
+for category, items in ASSET_DB.items():
+    for name, ticker in items.items():
+        label = f"{category} | {name} ({ticker})"
+        FLAT_ASSETS[label] = ticker
+
+# Reverse lookup for URL handling (Ticker -> Label)
+TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
+
+
+# =========================
 # Backtesting strategies
 # =========================
 
@@ -196,17 +338,36 @@ def single_asset_page():
         
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            default_ticker = st.query_params.get("Asset", "BZ=F")
-            ticker = st.text_input("Asset", value=default_ticker)
-            if ticker != st.query_params.get("Asset"):
+            # 1. Retrieve ticker from URL
+            url_ticker = st.query_params.get("Asset", "BZ=F")
+            
+            # Determine if it's a Known Asset or Custom
+            if url_ticker in TICKER_TO_LABEL:
+                default_index = list(FLAT_ASSETS.values()).index(url_ticker) + 1 # +1 for "Custom" option
+                default_custom = ""
+            else:
+                default_index = 0 # "Custom Ticker..."
+                default_custom = url_ticker
+
+            # Dropdown List
+            options = ["Custom Ticker..."] + list(FLAT_ASSETS.keys())
+            selected_label = st.selectbox("Select Asset", options, index=default_index)
+
+            # Logic: Dropdown vs Custom Input
+            if selected_label == "Custom Ticker...":
+                ticker = st.text_input("Enter Symbol (Yahoo Finance)", value=default_custom)
+            else:
+                ticker = FLAT_ASSETS[selected_label]
+            
+            # Sync to URL
+            if ticker and ticker != st.query_params.get("Asset"):
                 st.query_params["Asset"] = ticker
             
         with c2:
-            # Lookback étendu et granulaire
             period = st.selectbox(
                 "Lookback", 
                 ["5d", "10d", "15d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max"], 
-                index=3
+                index=6
             )
         
         with c3:
@@ -248,7 +409,7 @@ def single_asset_page():
         if prices.index.tz is not None:
             prices.index = prices.index.tz_localize(None)
     except:
-        st.error("Error loading data."); return
+        st.error(f"Error loading data for ticker: {ticker}"); return
 
     if prices.empty: st.warning("No data available."); return
 
@@ -307,7 +468,7 @@ def single_asset_page():
         x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
     )
 
-    # 1. Asset Price Line (BLEU) avec TOOLTIP
+    # 1. Asset Price Line (BLUE)
     line_asset = base.mark_line(stroke="#4A90E2", interpolate="monotone").encode(
         y=alt.Y(
             "Asset Price ($):Q",
@@ -321,7 +482,7 @@ def single_asset_page():
         ]
     )
 
-    # 2. Strategy Line (ROUGE) avec TOOLTIP
+    # 2. Strategy Line (RED)
     line_strat = base.mark_line(stroke="#FF4B4B", interpolate="monotone").encode(
         y=alt.Y(
             "Strategy (Base 100):Q",
@@ -347,7 +508,7 @@ def single_asset_page():
     display_metrics_grid(metrics_strat)
 
     # ==========================================
-    # 4. FORECAST (Updated Colors: Blue & Red + Interactive)
+    # 4. FORECAST (Blue & Red + Interactive)
     # ==========================================
     st.divider()
     st.header("Forecast Analysis")
@@ -362,32 +523,32 @@ def single_asset_page():
         x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
         y_axis = alt.Y("price:Q", scale=alt.Scale(zero=False), axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
 
-        # Historique en BLEU avec TOOLTIP
+        # Historique en BLEU
         c_hist = alt.Chart(hist_data).mark_line().encode(
             x=x_axis, y=y_axis,
-            color=alt.value("#4A90E2"), stroke=alt.datum("Prix historique"),
+            color=alt.value("#4A90E2"), stroke=alt.datum("Historic Price"),
             tooltip=[
                 alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
                 alt.Tooltip("price:Q", title="Price", format="$.2f")
             ]
         )
         
-        # Prédiction en ROUGE avec TOOLTIP
+        # Prédiction en ROUGE
         c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(
             x=x_axis, y=alt.Y("forecast:Q", scale=alt.Scale(zero=False)),
-            color=alt.value("#FF4B4B"), stroke=alt.datum("Prédiction"),
+            color=alt.value("#FF4B4B"), stroke=alt.datum("Prediction"),
             tooltip=[
                 alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
                 alt.Tooltip("forecast:Q", title="Forecast", format="$.2f")
             ]
         )
         
-        # Intervalle avec TOOLTIP
+        # Intervalle ROUGE clair
         c_band = alt.Chart(fc_data).mark_area(opacity=0.2).encode(
             x=x_axis,
             y=alt.Y("lower:Q", scale=alt.Scale(zero=False)),
             y2="upper:Q",
-            color=alt.value("#FF4B4B"), fill=alt.datum("Intervalle de confiance 95%"),
+            color=alt.value("#FF4B4B"), fill=alt.datum("95% Confidence Interval"),
             tooltip=[
                 alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
                 alt.Tooltip("lower:Q", title="Lower Bound", format="$.2f"),

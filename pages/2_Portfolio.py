@@ -12,7 +12,6 @@ from modules.portfolio import portfolio_page
 # 3. Configuration de la page
 st.set_page_config(
     page_title="Portfolio Manager",
-    page_icon="💼",
     layout="wide"
 )
 

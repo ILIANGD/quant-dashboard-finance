@@ -63,7 +63,7 @@ def backtest_breakout(prices: pd.Series, lookback: int = 50) -> pd.Series:
 
 
 # =========================
-# Metrics (Inchangé)
+# Metrics
 # =========================
 
 def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
@@ -223,7 +223,7 @@ def plot_forecast_with_band(history: pd.Series, fc: pd.DataFrame):
 
 
 # =========================
-# Streamlit page (Refactorisée)
+# Streamlit page
 # =========================
 
 def single_asset_page():
@@ -232,29 +232,29 @@ def single_asset_page():
     # Auto refresh every 5 minutes
     st_autorefresh(interval=300_000, key="auto_refresh_5min")
 
-    # ==========================================
-    # 1. ZONE DE CONTRÔLE (Encadrée en haut)
-    # ==========================================
+    # =========================================================================
+    # PART 1: CONTROLS (TOUS les paramètres ici)
+    # =========================================================================
     with st.container(border=True):
-        st.subheader("⚙️ Configuration & Live Data")
+        st.subheader("Controls")
         
-        # Ligne 1 : Paramètres
-        col1, col2, col3, col4 = st.columns(4)
+        # --- Ligne 1 : Paramètres généraux (Ticker, Dates, Stratégie) ---
+        c1, c2, c3, c4 = st.columns(4)
 
-        with col1:
+        with c1:
             default_ticker = st.query_params.get("ticker", "BZ=F")
             ticker = st.text_input("Ticker", value=default_ticker)
             if ticker != st.query_params.get("ticker"):
                 st.query_params["ticker"] = ticker
             
-        with col2:
+        with c2:
             period = st.selectbox(
                 "Lookback period",
                 ["1mo", "3mo", "6mo", "1y", "2y", "5y"],
                 index=3,
             )
 
-        with col3:
+        with c3:
             interval = st.selectbox(
                 "Frequency",
                 ["1d", "1wk", "1mo"],
@@ -262,69 +262,45 @@ def single_asset_page():
                 help="1d = daily, 1wk = weekly, 1mo = monthly",
             )
 
-        with col4:
+        with c4:
             strategy_name = st.selectbox(
                 "Strategy",
                 ["Buy & Hold", "Momentum (Fast MA / Slow MA)", "Breakout (N-day high)"],
                 index=0,
             )
 
-        # Ligne 2 : Live Quote & Paramètres Stratégie Spécifiques
-        st.markdown("---")
-        row2_col1, row2_col2 = st.columns([1, 1])
-        
-        with row2_col1:
-            # Gestion du Live Quote
-            quote_key = f"live_quote::{ticker}"
-            if "quote_refresh_nonce" not in st.session_state:
-                st.session_state["quote_refresh_nonce"] = 0
-            if quote_key not in st.session_state:
-                try:
-                    st.session_state[quote_key] = load_live_quote(ticker)
-                except Exception:
-                    st.session_state[quote_key] = {"last_price": None, "prev_close": None, "asof_utc": "N/A"}
+        st.divider()
 
-            quote = st.session_state[quote_key]
-            last_price = quote.get("last_price")
-            prev_close = quote.get("prev_close")
-            
-            delta_str = ""
-            if last_price is not None and prev_close is not None and prev_close != 0:
-                diff = last_price - prev_close
-                pct = diff / prev_close
-                delta_str = f"{diff:.2f} ({pct:.2%})"
+        # --- Ligne 2 : Paramètres Avancés (Stratégie + Forecast) ---
+        # On divise en deux colonnes : Paramètres Stratégie | Paramètres Forecast
+        adv_c1, adv_c2 = st.columns(2)
 
-            # Affichage Prix + Bouton Refresh
-            q1, q2 = st.columns([2, 1], vertical_alignment="bottom")
-            with q1:
-                 st.metric(
-                    label=f"Live Price ({ticker})", 
-                    value=f"{float(last_price):.2f} USD" if last_price else "N/A", 
-                    delta=delta_str
-                )
-            with q2:
-                if st.button("Refresh Quote"):
-                    try:
-                        st.session_state[quote_key] = load_live_quote(ticker)
-                    except Exception:
-                        pass
-                    st.rerun()
-
-        with row2_col2:
-            # Paramètres dynamiques de la stratégie choisie
+        with adv_c1:
+            st.markdown("**Strategy Parameters**")
+            # Paramètres dynamiques selon la stratégie
             if "Momentum" in strategy_name:
-                s1, s2 = st.columns(2)
-                fast = s1.slider("Fast MA", 5, 50, 20)
-                slow = s2.slider("Slow MA", 20, 200, 50)
-                if slow <= fast: st.warning("Slow > Fast required.")
+                sc1, sc2 = st.columns(2)
+                with sc1: fast = st.slider("Fast MA (days)", 5, 50, 20)
+                with sc2: slow = st.slider("Slow MA (days)", 20, 200, 50)
+                if slow <= fast: st.warning("Slow MA must be > Fast MA")
+                # Dummy lookback pour éviter erreur variable non définie
+                lookback = 50 
             elif "Breakout" in strategy_name:
                 lookback = st.slider("Breakout lookback (days)", 10, 200, 50)
+                # Dummy fast/slow
+                fast, slow = 20, 50
             else:
-                st.caption("No extra parameters for Buy & Hold.")
-                # Default vars to avoid errors
+                st.caption("No configurable parameters for Buy & Hold.")
                 fast, slow, lookback = 20, 50, 50
 
-    # Chargement des données (Invisible)
+        with adv_c2:
+            st.markdown("**Forecast Parameters**")
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1: horizon_fc = st.slider("Horizon", 5, 120, 20)
+            with fc2: ci_fc = st.selectbox("Confidence", [0.90, 0.95, 0.99], index=1)
+            with fc3: log_fc = st.selectbox("Model", ["Log", "Linear"], index=0) == "Log"
+
+    # --- Chargement des données (Backend) ---
     try:
         data = load_price_history(ticker, period=period, interval=interval)
     except Exception:
@@ -339,7 +315,7 @@ def single_asset_page():
         st.error("No usable price data.")
         return
 
-    # Check data sufficiency
+    # Vérification contraintes de données pour Breakout
     n_points = int(prices.shape[0])
     if "Breakout" in strategy_name and n_points <= lookback + 5:
         st.warning(f"Not enough data for breakout (Need > {lookback}).")
@@ -350,7 +326,7 @@ def single_asset_page():
     equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow) if "Momentum" in strategy_name else None
     equity_break = backtest_breakout(prices, lookback=lookback) if "Breakout" in strategy_name else None
 
-    # Sélection courbe
+    # Sélection de la courbe à afficher
     if equity_mom is not None:
         equity_sel = equity_mom.copy(); strat_label = "Momentum"
     elif equity_break is not None:
@@ -358,12 +334,67 @@ def single_asset_page():
     else:
         equity_sel = equity_bh.copy(); strat_label = "Buy & Hold"
 
-    # ==========================================
-    # 2. MAIN CHART SECTION
-    # ==========================================
-    st.divider() # Ligne de séparation
-    st.header(f"📈 Price Analysis: Raw vs {strat_label}")
+    # Calcul des métriques globales
+    asset_metrics = compute_metrics(prices)
+    strat_metrics = compute_metrics(equity_sel)
 
+    # =========================================================================
+    # PART 2: ASSET (Prix + Metrics Asset)
+    # =========================================================================
+    st.divider()
+    st.header("Asset Overview")
+    
+    # Live Quote Logic
+    quote_key = f"live_quote::{ticker}"
+    if "quote_refresh_nonce" not in st.session_state:
+        st.session_state["quote_refresh_nonce"] = 0
+    if quote_key not in st.session_state:
+        try:
+            st.session_state[quote_key] = load_live_quote(ticker)
+        except Exception:
+            st.session_state[quote_key] = {"last_price": None, "prev_close": None, "asof_utc": "N/A"}
+
+    quote = st.session_state[quote_key]
+    last_price = quote.get("last_price")
+    prev_close = quote.get("prev_close")
+    
+    delta_str = ""
+    if last_price is not None and prev_close is not None and prev_close != 0:
+        diff = last_price - prev_close
+        pct = diff / prev_close
+        delta_str = f"{diff:.2f} ({pct:.2%})"
+
+    # Layout: Prix à gauche (gros), Métriques à droite
+    col_price, col_metrics = st.columns([1, 2])
+    
+    with col_price:
+        st.metric(
+            label=f"Current Price ({ticker})", 
+            value=f"{float(last_price):.2f} USD" if last_price else "N/A", 
+            delta=delta_str
+        )
+        if st.button("Refresh Quote"):
+            try:
+                st.session_state[quote_key] = load_live_quote(ticker)
+            except Exception:
+                pass
+            st.rerun()
+        st.caption(f"Last update: {quote.get('asof_utc', 'N/A')}")
+
+    with col_metrics:
+        # Affichage compact des métriques de l'actif
+        m1, m2, m3 = st.columns(3)
+        with m1: metric_with_help("Annual return", f"{asset_metrics.get('annual_return', float('nan')) * 100:.2f}%")
+        with m2: metric_with_help("Annual volatility", f"{asset_metrics.get('annual_vol', float('nan')) * 100:.2f}%")
+        with m3: metric_with_help("Sharpe", f"{asset_metrics.get('sharpe', float('nan')):.2f}")
+
+    # =========================================================================
+    # PART 3: PERFORMANCE (Asset vs Strategy + Metrics Strategy)
+    # =========================================================================
+    st.divider()
+    st.header(f"Performance: Asset vs {strat_label}")
+
+    # Préparation du Graphique
     price_raw = prices.copy()
     if isinstance(price_raw, pd.DataFrame): price_raw = price_raw.iloc[:, 0]
     if isinstance(equity_sel, pd.DataFrame): equity_sel = equity_sel.iloc[:, 0]
@@ -375,58 +406,31 @@ def single_asset_page():
 
     df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna().reset_index()
     df_plot = df_plot.rename(columns={df_plot.columns[0]: "date"})
-    # Rename explicit
     df_plot.columns = ["date", "Raw price", strat_label]
 
     base = alt.Chart(df_plot).encode(x=alt.X("date:T", title="Date"))
     line_p = base.mark_line().encode(y=alt.Y("Raw price:Q", title="Price (USD)"))
     line_s = base.mark_line(strokeDash=[6, 3], color="orange").encode(
-        y=alt.Y(f"{strat_label}:Q", title="Strategy (USD)", axis=alt.Axis(orient="right"))
+        y=alt.Y(f"{strat_label}:Q", title="Strategy Value (USD)", axis=alt.Axis(orient="right"))
     )
     st.altair_chart(line_p + line_s, use_container_width=True)
 
-    # ==========================================
-    # 3. FORECAST SECTION
-    # ==========================================
+    # Affichage des métriques de la stratégie juste en dessous
+    st.subheader(f"Strategy Metrics ({strat_label})")
+    display_metrics_grid(strat_metrics)
+
+    # =========================================================================
+    # PART 4: FORECAST (Toujours activé, Paramètres dans Controls)
+    # =========================================================================
     st.divider()
-    st.header("🔮 AI Forecast")
-
-    enable_fc = st.checkbox("Show Forecast (Linear Trend + CI)", value=False)
-    if enable_fc:
-        c_f1, c_f2, c_f3 = st.columns(3)
-        with c_f1: horizon_fc = st.slider("Horizon", 5, 120, 20)
-        with c_f2: ci_fc = st.selectbox("Confidence", [0.90, 0.95, 0.99], index=1)
-        with c_f3: log_fc = st.toggle("Use Log Model", value=True)
-
-        fc = forecast_linear_trend_with_ci(prices, horizon=horizon_fc, ci_level=ci_fc, use_log=log_fc)
-        if not fc.empty:
-            plot_forecast_with_band(prices, fc)
-            last_fc = float(fc["forecast"].iloc[-1])
-            st.info(f"Prediction (+{horizon_fc} periods): **{last_fc:.2f} USD**")
-        else:
-            st.warning("Not enough data.")
-
-    # ==========================================
-    # 4. METRICS SECTION
-    # ==========================================
-    st.divider()
-    st.header("📊 Performance Metrics")
-
-    # Utilisation des Tabs pour ne pas surcharger la vue
-    tab1, tab2, tab3 = st.tabs(["Asset (Raw)", "Buy & Hold Strategy", f"Active Strategy ({strat_label})"])
-
-    asset_metrics = compute_metrics(prices)
-    bh_metrics = compute_metrics(equity_bh)
-    strat_metrics = compute_metrics(equity_sel)
-
-    with tab1:
-        st.caption("Metrics based on the raw asset price variations.")
-        display_metrics_grid(asset_metrics)
+    st.header("Forecast")
     
-    with tab2:
-        st.caption("Metrics if you bought once and held until today.")
-        display_metrics_grid(bh_metrics)
-        
-    with tab3:
-        st.caption(f"Metrics for the **{strat_label}** strategy.")
-        display_metrics_grid(strat_metrics)
+    # Calcul automatique avec les paramètres définis dans Controls
+    fc = forecast_linear_trend_with_ci(prices, horizon=horizon_fc, ci_level=ci_fc, use_log=log_fc)
+    
+    if not fc.empty:
+        plot_forecast_with_band(prices, fc)
+        last_fc = float(fc["forecast"].iloc[-1])
+        st.info(f"Prediction at +{horizon_fc} periods: **{last_fc:.2f} USD**")
+    else:
+        st.warning("Not enough data to compute forecast.")

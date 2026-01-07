@@ -185,7 +185,7 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
 # =========================
 
 def single_asset_page():
-    st.title("Single Asset")
+    st.title("Single Asset Analysis")
     st.autorefresh = st_autorefresh(interval=300_000, key="auto_refresh_5min")
 
     # ==========================================
@@ -201,9 +201,18 @@ def single_asset_page():
             if ticker != st.query_params.get("Asset"):
                 st.query_params["Asset"] = ticker
             
-        with c2: period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y"], index=4)
-        with c3: interval = st.selectbox("Freq", ["1d", "1wk", "1mo"], index=0)
-        with c4: strategy_name = st.selectbox("Backtesting Strategy", ["Buy & Hold", "Momentum (MA Cross)", "Breakout"], index=0)
+        with c2:
+            # Lookback étendu: 5 jours à 5 ans
+            period = st.selectbox("Lookback", ["5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"], index=4)
+        
+        with c3:
+            # Mapping Frequency "Human Readable" -> "Code"
+            interval_map = {"Daily": "1d", "Weekly": "1wk", "Monthly": "1mo"}
+            interval_label = st.selectbox("Frequency", list(interval_map.keys()), index=0)
+            interval = interval_map[interval_label]
+
+        with c4:
+            strategy_name = st.selectbox("Backtesting Strategy", ["Buy & Hold", "Momentum (MA Cross)", "Breakout"], index=0)
 
         st.divider()
         
@@ -226,7 +235,7 @@ def single_asset_page():
         with ac2:
             st.markdown("**Forecast Settings**")
             fc1, fc2 = st.columns(2)
-            with fc1: horizon_fc = st.slider("Horizon (periods)", 5, 120, 60)
+            with fc1: horizon_fc = st.slider("Horizon (days)", 5, 120, 60)
             with fc2: log_fc = st.toggle("Log-Space Model", value=True)
 
     # Load Data
@@ -270,7 +279,8 @@ def single_asset_page():
     col_p, col_m = st.columns([1, 2])
     with col_p:
         delta = f"{curr - prev:.2f} ({(curr-prev)/prev:.2%})" if (curr and prev) else ""
-        st.metric(f"Price ({ticker})", f"{curr:.2f} $" if curr else "N/A", delta)
+        # Dollar avant le chiffre
+        st.metric(f"Price ({ticker})", f"${curr:.2f}" if curr else "N/A", delta)
         if st.button("Refresh"): 
             st.session_state[quote_key] = load_live_quote(ticker)
             st.rerun()
@@ -288,51 +298,47 @@ def single_asset_page():
     st.divider()
     st.subheader(f"Price & Strategy Performance ({strat_label})")
     
-    # CORRECTION ICI: Alignement automatique des longueurs via concat
-    # Utilisation de dropna() pour n'afficher que la période où la stratégie existe
     df_perf = pd.concat([prices, equity_sel * 100], axis=1).dropna()
     df_perf.columns = ["Asset Price ($)", "Strategy (Base 100)"]
     df_perf = df_perf.reset_index().rename(columns={df_perf.index.name or "index": "date"})
 
-    # Base Chart
     base = alt.Chart(df_perf).encode(
         x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
     )
 
-    # 1. Asset Price Line (Blue, Left Axis) - ADAPTIVE SCALE (zero=False)
+    # 1. Asset Price Line (BLEU)
     line_asset = base.mark_line(stroke="#4A90E2", interpolate="monotone").encode(
         y=alt.Y(
             "Asset Price ($):Q",
             title="Asset Price ($)",
-            scale=alt.Scale(zero=False),  # <--- ZOOM AUTO
+            scale=alt.Scale(zero=False),
             axis=alt.Axis(titleColor="#4A90E2", grid=True, gridOpacity=0.3)
         )
     )
 
-    # 2. Strategy Line (Green, Right Axis) - ADAPTIVE SCALE (zero=False)
-    line_strat = base.mark_line(stroke="#2ECC71", interpolate="monotone").encode(
+    # 2. Strategy Line (ROUGE pour cohérence thème)
+    line_strat = base.mark_line(stroke="#FF4B4B", interpolate="monotone").encode(
         y=alt.Y(
             "Strategy (Base 100):Q",
             title="Strategy Performance (Base 100)",
-            scale=alt.Scale(zero=False), # <--- ZOOM AUTO
-            axis=alt.Axis(titleColor="#2ECC71", orient="right", grid=False)
+            scale=alt.Scale(zero=False),
+            axis=alt.Axis(titleColor="#FF4B4B", orient="right", grid=False)
         )
     )
 
-    # Combine with independent scales
     chart_perf = alt.layer(line_asset, line_strat).resolve_scale(
         y='independent'
     ).properties(height=450)
 
     st.altair_chart(chart_perf, use_container_width=True)
     
-    st.caption("Blue: Asset Price (Left Scale) | Green: Strategy rebased to 100 (Right Scale)")
+    st.caption("Blue: Asset Price (Left Scale) | Red: Strategy rebased to 100 (Right Scale)")
     
     st.subheader("Strategy Metrics")
     display_metrics_grid(metrics_strat)
 
     # ==========================================
-    # 4. FORECAST (Updated Scale)
+    # 4. FORECAST (Updated Colors: Blue & Red)
     # ==========================================
     st.divider()
     st.header("Forecast Analysis")
@@ -344,27 +350,27 @@ def single_asset_page():
         hist_data.columns = ["date", "price"]
         fc_data = fc_df.reset_index().rename(columns={"index": "date"})
         
-        # --- ALTAIR CHART ---
-        # Axes with adaptive scale
         x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
-        # Important: zero=False for adaptive zoom
         y_axis = alt.Y("price:Q", scale=alt.Scale(zero=False), axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
 
+        # Historique en BLEU
         c_hist = alt.Chart(hist_data).mark_line().encode(
             x=x_axis, y=y_axis,
             color=alt.value("#4A90E2"), stroke=alt.datum("Prix historique")
         )
         
+        # Prédiction en ROUGE (Thème)
         c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(
             x=x_axis, y=alt.Y("forecast:Q", scale=alt.Scale(zero=False)),
-            color=alt.value("#2ECC71"), stroke=alt.datum("Prédiction")
+            color=alt.value("#FF4B4B"), stroke=alt.datum("Prédiction")
         )
         
-        c_band = alt.Chart(fc_data).mark_area(opacity=0.3).encode(
+        # Intervalle en ROUGE clair
+        c_band = alt.Chart(fc_data).mark_area(opacity=0.2).encode(
             x=x_axis,
             y=alt.Y("lower:Q", scale=alt.Scale(zero=False)),
             y2="upper:Q",
-            color=alt.value("#2ECC71"), fill=alt.datum("Intervalle de confiance 95%") 
+            color=alt.value("#FF4B4B"), fill=alt.datum("Intervalle de confiance 95%") 
         )
 
         chart = alt.layer(c_hist, c_band, c_fc).properties(height=500).configure_legend(
@@ -377,7 +383,7 @@ def single_asset_page():
         fp1, fp2, fp3 = st.columns(3)
         with fp1: st.info(f"**Algorithm:** {fc_metrics['model']}")
         with fp2: st.metric("R² Score", f"{fc_metrics['r2']:.3f}")
-        with fp3: st.metric("RMSE", f"{fc_metrics['rmse']:.2f} $")
-        st.markdown(f"**Prediction (+{horizon_fc}d):** {fc_df['forecast'].iloc[-1]:.2f} $")
+        with fp3: st.metric("RMSE", f"${fc_metrics['rmse']:.2f}")
+        st.markdown(f"**Prediction (+{horizon_fc}d):** ${fc_df['forecast'].iloc[-1]:.2f}")
     else:
         st.warning("Not enough data to train model.")

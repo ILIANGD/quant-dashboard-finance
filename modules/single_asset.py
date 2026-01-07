@@ -251,19 +251,39 @@ def single_asset_page():
             index=0,
         )
 
-    # Live quote
-    try:
-        quote = load_live_quote(ticker)
-    except Exception:
-        quote = {"last_price": None, "asof_utc": "N/A"}
+    # Live quote (manual refresh)
+    quote_key = f"live_quote::{ticker}"
 
-    c1, c2 = st.columns(2)
+    if "quote_refresh_nonce" not in st.session_state:
+        st.session_state["quote_refresh_nonce"] = 0
+
+    # If we already have a quote cached for this ticker, reuse it
+    if quote_key not in st.session_state:
+        try:
+            st.session_state[quote_key] = load_live_quote(ticker)
+        except Exception:
+            st.session_state[quote_key] = {"last_price": None, "asof_utc": "N/A"}
+
+    quote = st.session_state[quote_key]
+
+    c1, c2, c3 = st.columns([2, 1, 2])
     with c1:
-        if quote.get("last_price") is None:
+        last_price = quote.get("last_price")
+        if last_price is None:
             st.metric("Current price", "N/A")
         else:
-            st.metric("Current price", f"{float(quote['last_price']):.2f} USD")
+            st.metric("Current price", f"{float(last_price):.2f} USD")
+
     with c2:
+        if st.button("Refresh", use_container_width=True, help="Reload the live quote now."):
+            # Force a new quote fetch, then rerun
+            try:
+                st.session_state[quote_key] = load_live_quote(ticker)
+            except Exception:
+                st.session_state[quote_key] = {"last_price": None, "asof_utc": "N/A"}
+            st.rerun()
+
+    with c3:
         st.caption(f"Last update: {quote.get('asof_utc', 'N/A')}")
 
     # Strategy parameters

@@ -52,8 +52,7 @@ def simulate_portfolio(prices_df: pd.DataFrame, weights: dict, rebal_rule: str, 
     # Simple rebalancing logic
     rdates = set(rebalance_dates(rets.index, rebal_rule))
     
-    # Vectorized approximation for speed (assuming daily rebal or drift)
-    # For exact simulation with drift, we iterate. Here we use a simpler loop for clarity.
+    # Vectorized approximation for speed
     current_w = w_vec.copy()
     port_rets = []
     
@@ -67,7 +66,6 @@ def simulate_portfolio(prices_df: pd.DataFrame, weights: dict, rebal_rule: str, 
         port_rets.append(port_ret)
         
         # Update weights based on asset performance (Drift)
-        # w_new = w_old * (1+r) / (1+port_ret)
         current_w = current_w * (1 + r) / (1 + port_ret)
 
     port_series = pd.Series(port_rets, index=rets.index)
@@ -238,13 +236,13 @@ def portfolio_page():
     stroke_width = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1))
     opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.5))
 
+    # CORRECTION ICI: Suppression de l'argument color en double
     c_norm = alt.Chart(df_melt).mark_line().encode(
         x=alt.X("date:T", axis=alt.Axis(title=None)),
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
-        color=alt.Color("Asset:N", legend=alt.Legend(orient="bottom")),
+        color=highlight, # On utilise la condition (Portfolio=Rouge, Autres=Bleu)
         strokeWidth=stroke_width,
         opacity=opacity,
-        color=highlight,
         tooltip=["date:T", "Asset:N", alt.Tooltip("Value:Q", format=".1f")]
     ).properties(height=400)
 
@@ -279,7 +277,6 @@ def portfolio_page():
 
     with r2:
         st.subheader("Effective Weights")
-        # Calc mean weight over time or just initial target? Let's show Target.
         final_w = _normalize_weights({t: weights.get(t, 0) for t in tickers})
         df_w = pd.DataFrame(list(final_w.items()), columns=["Asset", "Weight"])
         

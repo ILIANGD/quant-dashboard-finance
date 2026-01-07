@@ -7,11 +7,11 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
 import locale
 
-# Tenter de définir la locale pour le formatage monétaire, sinon utiliser un format par défaut
+# Tenter de définir la locale pour le formatage (séparateur milliers etc)
 try:
     locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 except locale.Error:
-    pass # Utiliser le format par défaut si la locale n'est pas dispo
+    pass
 
 from services.data_loader import load_price_history, load_live_quote
 
@@ -22,6 +22,7 @@ from services.data_loader import load_price_history, load_live_quote
 
 def backtest_buy_hold(prices: pd.Series) -> pd.Series:
     """Buy & Hold: invested all the time."""
+    # Ensure no timezone issues
     prices = prices.dropna()
     rets = prices.pct_change().dropna()
     equity = (1 + rets).cumprod()
@@ -120,7 +121,6 @@ def display_metrics_grid(metrics: dict):
 def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = True):
     """
     Trains a Linear Regression model on historical time steps to predict future trend.
-    Returns forecast DataFrame and Performance Metrics (R2, RMSE).
     """
     s = prices.dropna()
     if len(s) < 30: return pd.DataFrame(), {}
@@ -133,11 +133,11 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
     model = LinearRegression()
     model.fit(X, y)
     
-    # Calculate In-Sample Performance (How well does it fit history?)
+    # Calculate In-Sample Performance
     y_pred_hist = model.predict(X)
     r2 = r2_score(y, y_pred_hist)
     rmse = np.sqrt(mean_squared_error(y, y_pred_hist))
-    if use_log: rmse = np.exp(rmse) # Approx conversion back to $
+    if use_log: rmse = np.exp(rmse) 
 
     # Predict Future
     last_idx = X[-1][0]
@@ -145,7 +145,6 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
     y_future_pred = model.predict(X_future)
 
     # Confidence Interval (Approx based on historical RMSE)
-    # 95% CI is approx +/- 1.96 * StdDev of residuals
     residuals = y - y_pred_hist
     std_resid = np.std(residuals)
     z_score = 1.96 
@@ -203,7 +202,7 @@ def single_asset_page():
             if ticker != st.query_params.get("ticker"):
                 st.query_params["ticker"] = ticker
             
-        with c2: period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y"], index=4) # Default to 5y for better forecast context
+        with c2: period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y"], index=4)
         with c3: interval = st.selectbox("Freq", ["1d", "1wk", "1mo"], index=0)
         with c4: strategy_name = st.selectbox("Strategy", ["Buy & Hold", "Momentum (MA Cross)", "Breakout"], index=0)
 
@@ -228,13 +227,16 @@ def single_asset_page():
         with ac2:
             st.markdown("**Forecast Settings**")
             fc1, fc2 = st.columns(2)
-            with fc1: horizon_fc = st.slider("Horizon (periods)", 5, 120, 60) # Default 60 for better view
+            with fc1: horizon_fc = st.slider("Horizon (periods)", 5, 120, 60)
             with fc2: log_fc = st.toggle("Log-Space Model", value=True)
 
     # Load Data
     try:
         data = load_price_history(ticker, period=period, interval=interval)
         prices = data["price"].dropna()
+        # FIX: Remove timezone information to avoid merge issues
+        if prices.index.tz is not None:
+            prices.index = prices.index.tz_localize(None)
     except:
         st.error("Error loading data."); return
 
@@ -267,7 +269,6 @@ def single_asset_page():
     curr = quote.get("last_price")
     prev = quote.get("prev_close")
     
-    # Price Block
     col_p, col_m = st.columns([1, 2])
     with col_p:
         delta = f"{curr - prev:.2f} ({(curr-prev)/prev:.2%})" if (curr and prev) else ""
@@ -277,7 +278,6 @@ def single_asset_page():
             st.rerun()
             
     with col_m:
-        # Custom Metric Grid for Asset
         m1, m2, m3, m4 = st.columns(4)
         with m1: metric_card("Return (Ann.)", f"{metrics_asset['annual_return']:.2%}")
         with m2: metric_card("Volatility", f"{metrics_asset['annual_vol']:.2%}")
@@ -290,9 +290,11 @@ def single_asset_page():
     st.divider()
     st.header(f"Performance: Asset vs {strat_label}")
     
+    # FIX: Explicit columns renaming to ensure 'date' exists for Altair
     df_plot = pd.concat([prices, equity_sel * 1000], axis=1).dropna()
-    df_plot.columns = ["Raw Price", strat_label]
-    df_plot = df_plot.reset_index().rename(columns={"index": "date"})
+    df_plot = df_plot.reset_index()
+    # Force column names to be clean
+    df_plot.columns = ["date", "Raw Price", strat_label]
 
     base = alt.Chart(df_plot).encode(x=alt.X("date:T", title="Date"))
     l1 = base.mark_line().encode(y=alt.Y("Raw Price:Q", title="Price ($)"))
@@ -305,16 +307,14 @@ def single_asset_page():
     display_metrics_grid(metrics_strat)
 
     # ==========================================
-    # 4. FORECAST (Updated to match image style)
+    # 4. FORECAST (Updated)
     # ==========================================
     st.divider()
     st.header("Forecast Analysis")
 
-    # Train & Predict
     fc_df, fc_metrics = train_forecast_model(prices, horizon_fc, log_fc)
 
     if not fc_df.empty:
-        # Prepare Data for Plotting
         # Show more historical context for better visualization
         hist_data = prices.iloc[-252:].to_frame("price").reset_index() 
         hist_data.columns = ["date", "price"]
@@ -322,56 +322,46 @@ def single_asset_page():
         fc_data = fc_df.reset_index().rename(columns={"index": "date"})
         
         # --- ALTAIR CHART ---
-        # Common Axis Definitions
         x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
         y_axis = alt.Y("price:Q", axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
 
-        # 1. Historical Line (Blue, Solid)
+        # 1. Historical Line (Blue)
         c_hist = alt.Chart(hist_data).mark_line().encode(
             x=x_axis,
             y=y_axis,
-            color=alt.value("#4A90E2"), # Blue color like in the image
-            stroke=alt.datum("Prix historique") # For legend
+            color=alt.value("#4A90E2"), 
+            stroke=alt.datum("Prix historique")
         )
         
         # 2. Forecast Line (Green, Dashed)
         c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(
             x=x_axis,
             y=alt.Y("forecast:Q"),
-            color=alt.value("#2ECC71"), # Green color like in the image
-            stroke=alt.datum("Prédiction") # For legend
+            color=alt.value("#2ECC71"), 
+            stroke=alt.datum("Prédiction")
         )
         
-        # 3. Confidence Interval Area (Light Green, Shaded)
+        # 3. Confidence Interval Area (Light Green)
+        # FIX: Removed alt.Y() wrapper for y2 to avoid SchemaValidationError
         c_band = alt.Chart(fc_data).mark_area(opacity=0.3).encode(
             x=x_axis,
             y=alt.Y("lower:Q"),
-            y2=alt.Y("upper:Q"),
-            color=alt.value("#2ECC71"), # Same green
-            fill=alt.datum("Intervalle de confiance 95%") # For legend
+            y2="upper:Q",  # <--- CORRECTION HERE: Passed as string directly
+            color=alt.value("#2ECC71"), 
+            fill=alt.datum("Intervalle de confiance 95%") 
         )
 
-        # Combine & Style (Height 500px, Legend at bottom)
         chart = alt.layer(c_hist, c_band, c_fc).properties(height=500).configure_legend(
-            orient='bottom',
-            title=None,
-            labelFontSize=12,
-        ).configure_axis(
-            grid=True, gridOpacity=0.3
-        )
+            orient='bottom', title=None, labelFontSize=12,
+        ).configure_axis(grid=True, gridOpacity=0.3)
         
         st.altair_chart(chart, use_container_width=True)
 
-        # --- FORECAST PERFORMANCE ---
-        st.subheader("Model Performance (Fit Quality)")
-        
+        st.subheader("Model Performance")
         fp1, fp2, fp3 = st.columns(3)
-        with fp1:
-            st.info(f"**Algorithm:** {fc_metrics['model']}")
-        with fp2:
-            st.metric("R² Score (Fit)", f"{fc_metrics['r2']:.3f}", help="1.0 = Perfect fit to history")
-        with fp3:
-            st.metric("RMSE (Avg Error)", f"{fc_metrics['rmse']:.2f} $", help="Root Mean Squared Error on historical data")
+        with fp1: st.info(f"**Algorithm:** {fc_metrics['model']}")
+        with fp2: st.metric("R² Score", f"{fc_metrics['r2']:.3f}", help="1.0 = Perfect fit")
+        with fp3: st.metric("RMSE", f"{fc_metrics['rmse']:.2f} $", help="Root Mean Squared Error")
             
         st.markdown(f"**Prediction (+{horizon_fc}d):** {fc_df['forecast'].iloc[-1]:.2f} $")
 

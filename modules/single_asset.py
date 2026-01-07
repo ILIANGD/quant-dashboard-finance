@@ -4,7 +4,6 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import altair as alt
 
-# Assure-toi que le fichier data_loader est bien mis à jour !
 from services.data_loader import load_price_history, load_live_quote
 
 
@@ -266,22 +265,22 @@ def single_asset_page():
     last_price = quote.get("last_price")
     prev_close = quote.get("prev_close")
 
-    # Calculate Delta (Change)
-    delta_val = None
+    # Calculate Delta
     delta_str = ""
     if last_price is not None and prev_close is not None and prev_close != 0:
         diff = last_price - prev_close
         pct = diff / prev_close
-        # Format string like: "-4.90 (-1.83%)"
         delta_str = f"{diff:.2f} ({pct:.2%})"
-        delta_val = diff # st.metric uses this to determine color (green/red)
 
-    c1, c2, c3 = st.columns([2, 1, 2])
+    # LAYOUT FIX: Align button with price value
+    # We use vertical_alignment="bottom" to push the button down to the text level
+    # We use ratios [1.3, 0.5, 2] to keep the button close to the Metric
+    c1, c2, c3 = st.columns([1.3, 0.5, 2], vertical_alignment="bottom")
+    
     with c1:
         if last_price is None:
             st.metric("Current price", "N/A")
         else:
-            # Displays Price and Delta (Green/Red automatically based on sign)
             st.metric(
                 label="Current price", 
                 value=f"{float(last_price):.2f} USD", 
@@ -289,8 +288,8 @@ def single_asset_page():
             )
 
     with c2:
-        if st.button("Refresh", use_container_width=True, help="Reload the live quote now."):
-            # Force a new quote fetch, then rerun
+        # Button is now bottom-aligned, so it sits next to the "105.20 USD"
+        if st.button("Refresh", help="Reload the live quote now."):
             try:
                 st.session_state[quote_key] = load_live_quote(ticker)
             except Exception:
@@ -298,6 +297,7 @@ def single_asset_page():
             st.rerun()
 
     with c3:
+        # Use a spacer or just display timestamp
         st.caption(f"Last update: {quote.get('asof_utc', 'N/A')}")
 
     # Strategy parameters
@@ -338,7 +338,7 @@ def single_asset_page():
         st.error("No usable price data for this ticker.")
         return
 
-    # If breakout selected, enforce enough data and stop early if not
+    # Check breakout requirements
     n_points = int(prices.shape[0])
     if "Breakout" in strategy_name and n_points <= lookback + 5:
         st.warning(
@@ -352,7 +352,7 @@ def single_asset_page():
     equity_mom = backtest_momentum_ma(prices, fast=fast, slow=slow) if "Momentum" in strategy_name else None
     equity_break = backtest_breakout(prices, lookback=lookback) if "Breakout" in strategy_name else None
 
-    # Optional debug (aligned with min_periods)
+    # Optional debug
     if equity_break is not None:
         prices_dbg = prices.dropna()
         rolling_high_dbg = prices_dbg.shift(1).rolling(lookback, min_periods=lookback).max()
@@ -361,7 +361,7 @@ def single_asset_page():
         invested_ratio = float((position_dbg > 0).mean())
         st.caption(f"Breakout debug: invested {invested_ratio*100:.1f}% of the time.")
 
-    # Choose strategy curve for the main plot
+    # Choose strategy curve
     if equity_mom is not None:
         equity_sel = equity_mom.copy()
         strat_label = "Momentum Strategy"
@@ -375,22 +375,18 @@ def single_asset_page():
     st.subheader(
         f"Raw price (USD) vs {strat_label}",
         help=(
-            "Each curve is built from discrete observations (points) "
-            "at the selected frequency. "
-            "The strategy curve reflects cumulative portfolio value."
+            "The raw price curve shows the observed market price in USD, "
+            "while the strategy curve shows the simulated portfolio value."
         ),
     )
 
-    # IMPORTANT FIX:
-    # - Raw price is in USD (market price)
-    # - Strategy curve should be a portfolio value in USD with an initial capital
     price_raw = prices.copy()
     if isinstance(price_raw, pd.DataFrame):
         price_raw = price_raw.iloc[:, 0]
     if isinstance(equity_sel, pd.DataFrame):
         equity_sel = equity_sel.iloc[:, 0]
 
-    initial_capital = 1000.0  # USD (ensures Buy&Hold is NOT identical to raw price)
+    initial_capital = 1000.0  # USD
     strategy_value = equity_sel * initial_capital
 
     price_raw.name = "Raw price"
@@ -398,8 +394,8 @@ def single_asset_page():
 
     df_plot = pd.concat([price_raw, strategy_value], axis=1).dropna()
     df_plot = df_plot.reset_index().rename(columns={df_plot.index.name or "index": "date"})
-    df_plot = df_plot.rename(columns={"Raw price": "Raw price"})  # no-op, juste clair
-
+    
+    # Rename for clarity
     df_plot = df_plot.rename(columns={price_raw.name: "Raw price", strat_label: strat_label})
     df_plot = df_plot[["date", "Raw price", strat_label]]
     
@@ -417,12 +413,7 @@ def single_asset_page():
 
     st.altair_chart(price_line + strategy_line, use_container_width=True)
     st.caption(
-        "Each point represents one observation at the selected frequency "
-        "(daily, weekly, or monthly). "
-        "The raw price curve shows the observed market price in USD, "
-        "while the strategy curve shows the simulated portfolio value "
-        "starting from an initial capital (USD) and applying trading signals "
-        "at each observation date."        
+        "Each point represents one observation at the selected frequency."
     )
 
     # =========================
@@ -455,10 +446,7 @@ def single_asset_page():
                 f"[{float(fc['lower'].iloc[-1]):.2f}, {float(fc['upper'].iloc[-1]):.2f}] USD"
             )
 
-    st.caption(
-        "Performance metrics are computed from the same series shown above. "
-        "Returns are calculated between consecutive points of the selected frequency."
-    )
+    st.caption("Performance metrics are computed from the same series shown above.")
 
     # =========================
     # Metrics

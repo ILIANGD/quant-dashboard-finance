@@ -7,7 +7,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
 import locale
 
-# Tenter de définir la locale pour le formatage (séparateur milliers etc)
+# Tenter de définir la locale pour le formatage
 try:
     locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
 except locale.Error:
@@ -22,7 +22,6 @@ from services.data_loader import load_price_history, load_live_quote
 
 def backtest_buy_hold(prices: pd.Series) -> pd.Series:
     """Buy & Hold: invested all the time."""
-    # Ensure no timezone issues
     prices = prices.dropna()
     rets = prices.pct_change().dropna()
     equity = (1 + rets).cumprod()
@@ -144,7 +143,7 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
     X_future = np.arange(last_idx + 1, last_idx + 1 + horizon).reshape(-1, 1)
     y_future_pred = model.predict(X_future)
 
-    # Confidence Interval (Approx based on historical RMSE)
+    # Confidence Interval
     residuals = y - y_pred_hist
     std_resid = np.std(residuals)
     z_score = 1.96 
@@ -234,7 +233,7 @@ def single_asset_page():
     try:
         data = load_price_history(ticker, period=period, interval=interval)
         prices = data["price"].dropna()
-        # FIX: Remove timezone information to avoid merge issues
+        # Remove timezone to avoid merge conflicts
         if prices.index.tz is not None:
             prices.index = prices.index.tz_localize(None)
     except:
@@ -260,7 +259,6 @@ def single_asset_page():
     st.divider()
     st.header("Asset Overview")
     
-    # Live Quote
     quote_key = f"q_{ticker}"
     if quote_key not in st.session_state: 
         st.session_state[quote_key] = load_live_quote(ticker)
@@ -282,32 +280,60 @@ def single_asset_page():
         with m1: metric_card("Return (Ann.)", f"{metrics_asset['annual_return']:.2%}")
         with m2: metric_card("Volatility", f"{metrics_asset['annual_vol']:.2%}")
         with m3: metric_card("Sharpe", f"{metrics_asset['sharpe']:.2f}")
-        with m4: metric_card("Max Drawdown", f"{metrics_asset['max_drawdown']:.2%}", "Max loss from peak")
+        with m4: metric_card("Max Drawdown", f"{metrics_asset['max_drawdown']:.2%}", "Max loss")
 
     # ==========================================
-    # 3. PERFORMANCE (Chart)
+    # 3. PERFORMANCE (Chart Style Double Axe)
     # ==========================================
     st.divider()
-    st.header(f"Performance: Asset vs {strat_label}")
+    st.subheader(f"Price & Strategy Performance ({strat_label})")
     
-    # FIX: Explicit columns renaming to ensure 'date' exists for Altair
-    df_plot = pd.concat([prices, equity_sel * 1000], axis=1).dropna()
-    df_plot = df_plot.reset_index()
-    # Force column names to be clean
-    df_plot.columns = ["date", "Raw Price", strat_label]
+    # Prepare Data: Left Axis = Price ($), Right Axis = Base 100
+    df_perf = pd.DataFrame({
+        "date": prices.index,
+        "Asset Price ($)": prices.values,
+        "Strategy (Base 100)": equity_sel.values * 100
+    })
 
-    base = alt.Chart(df_plot).encode(x=alt.X("date:T", title="Date"))
-    l1 = base.mark_line().encode(y=alt.Y("Raw Price:Q", title="Price ($)"))
-    l2 = base.mark_line(strokeDash=[5,5], color="orange").encode(
-        y=alt.Y(f"{strat_label}:Q", title="Strategy Value ($)", axis=alt.Axis(orient="right"))
+    # Base Chart
+    base = alt.Chart(df_perf).encode(
+        x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
     )
-    st.altair_chart(l1 + l2, use_container_width=True)
+
+    # 1. Asset Price Line (Blue, Left Axis) - ADAPTIVE SCALE (zero=False)
+    line_asset = base.mark_line(stroke="#4A90E2", interpolate="monotone").encode(
+        y=alt.Y(
+            "Asset Price ($):Q",
+            title="Asset Price ($)",
+            scale=alt.Scale(zero=False),  # <--- ZOOM AUTO
+            axis=alt.Axis(titleColor="#4A90E2", grid=True, gridOpacity=0.3)
+        )
+    )
+
+    # 2. Strategy Line (Green, Right Axis) - ADAPTIVE SCALE (zero=False)
+    line_strat = base.mark_line(stroke="#2ECC71", interpolate="monotone").encode(
+        y=alt.Y(
+            "Strategy (Base 100):Q",
+            title="Strategy Performance (Base 100)",
+            scale=alt.Scale(zero=False), # <--- ZOOM AUTO
+            axis=alt.Axis(titleColor="#2ECC71", orient="right", grid=False)
+        )
+    )
+
+    # Combine with independent scales
+    chart_perf = alt.layer(line_asset, line_strat).resolve_scale(
+        y='independent'
+    ).properties(height=450)
+
+    st.altair_chart(chart_perf, use_container_width=True)
+    
+    st.caption("Blue: Asset Price (Left Scale) | Green: Strategy rebased to 100 (Right Scale)")
     
     st.subheader("Strategy Metrics")
     display_metrics_grid(metrics_strat)
 
     # ==========================================
-    # 4. FORECAST (Updated)
+    # 4. FORECAST (Updated Scale)
     # ==========================================
     st.divider()
     st.header("Forecast Analysis")
@@ -315,40 +341,31 @@ def single_asset_page():
     fc_df, fc_metrics = train_forecast_model(prices, horizon_fc, log_fc)
 
     if not fc_df.empty:
-        # Show more historical context for better visualization
         hist_data = prices.iloc[-252:].to_frame("price").reset_index() 
         hist_data.columns = ["date", "price"]
-        
         fc_data = fc_df.reset_index().rename(columns={"index": "date"})
         
         # --- ALTAIR CHART ---
+        # Axes with adaptive scale
         x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
-        y_axis = alt.Y("price:Q", axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
+        # Important: zero=False for adaptive zoom
+        y_axis = alt.Y("price:Q", scale=alt.Scale(zero=False), axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
 
-        # 1. Historical Line (Blue)
         c_hist = alt.Chart(hist_data).mark_line().encode(
-            x=x_axis,
-            y=y_axis,
-            color=alt.value("#4A90E2"), 
-            stroke=alt.datum("Prix historique")
+            x=x_axis, y=y_axis,
+            color=alt.value("#4A90E2"), stroke=alt.datum("Prix historique")
         )
         
-        # 2. Forecast Line (Green, Dashed)
         c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(
-            x=x_axis,
-            y=alt.Y("forecast:Q"),
-            color=alt.value("#2ECC71"), 
-            stroke=alt.datum("Prédiction")
+            x=x_axis, y=alt.Y("forecast:Q", scale=alt.Scale(zero=False)),
+            color=alt.value("#2ECC71"), stroke=alt.datum("Prédiction")
         )
         
-        # 3. Confidence Interval Area (Light Green)
-        # FIX: Removed alt.Y() wrapper for y2 to avoid SchemaValidationError
         c_band = alt.Chart(fc_data).mark_area(opacity=0.3).encode(
             x=x_axis,
-            y=alt.Y("lower:Q"),
-            y2="upper:Q",  # <--- CORRECTION HERE: Passed as string directly
-            color=alt.value("#2ECC71"), 
-            fill=alt.datum("Intervalle de confiance 95%") 
+            y=alt.Y("lower:Q", scale=alt.Scale(zero=False)),
+            y2="upper:Q",
+            color=alt.value("#2ECC71"), fill=alt.datum("Intervalle de confiance 95%") 
         )
 
         chart = alt.layer(c_hist, c_band, c_fc).properties(height=500).configure_legend(
@@ -360,10 +377,8 @@ def single_asset_page():
         st.subheader("Model Performance")
         fp1, fp2, fp3 = st.columns(3)
         with fp1: st.info(f"**Algorithm:** {fc_metrics['model']}")
-        with fp2: st.metric("R² Score", f"{fc_metrics['r2']:.3f}", help="1.0 = Perfect fit")
-        with fp3: st.metric("RMSE", f"{fc_metrics['rmse']:.2f} $", help="Root Mean Squared Error")
-            
+        with fp2: st.metric("R² Score", f"{fc_metrics['r2']:.3f}")
+        with fp3: st.metric("RMSE", f"{fc_metrics['rmse']:.2f} $")
         st.markdown(f"**Prediction (+{horizon_fc}d):** {fc_df['forecast'].iloc[-1]:.2f} $")
-
     else:
         st.warning("Not enough data to train model.")

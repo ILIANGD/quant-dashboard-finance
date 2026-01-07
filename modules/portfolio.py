@@ -14,18 +14,200 @@ except locale.Error:
 from services.data_loader import load_price_history, load_live_quote
 
 # =========================
+# ASSET DATABASE
+# =========================
+
+ASSET_DB = {
+    "BONDS & RATES": {
+        "German 10Y Bund Yield": "^TNX",
+        "US Treasury Yield 10 Years": "^TNX",
+        "US Treasury Yield 30 Years": "^TYX",
+        "US Treasury Yield 5 Years": "^FVX"
+    },
+    "COMMODITIES - AGRI": {
+        "Cocoa": "CC=F",
+        "Coffee": "KC=F",
+        "Corn": "ZC=F",
+        "Cotton": "CT=F",
+        "Lean Hogs": "HE=F",
+        "Live Cattle": "LE=F",
+        "Lumber": "LBS=F",
+        "Oats": "ZO=F",
+        "Orange Juice": "OJ=F",
+        "Rough Rice": "ZR=F",
+        "Soybean Meal": "ZM=F",
+        "Soybean Oil": "ZL=F",
+        "Soybeans": "ZS=F",
+        "Sugar": "SB=F",
+        "Wheat": "ZW=F"
+    },
+    "COMMODITIES - ENERGY": {
+        "Brent Crude Oil": "BZ=F",
+        "Gasoline (RBOB)": "RB=F",
+        "Heating Oil": "HO=F",
+        "Natural Gas": "NG=F",
+        "WTI Crude Oil": "CL=F"
+    },
+    "COMMODITIES - METALS": {
+        "Aluminum": "ALI=F",
+        "Copper": "HG=F",
+        "Gold": "GC=F",
+        "Palladium": "PA=F",
+        "Platinum": "PL=F",
+        "Silver": "SI=F"
+    },
+    "CRYPTO": {
+        "Avalanche": "AVAX-USD",
+        "Binance Coin": "BNB-USD",
+        "Bitcoin": "BTC-USD",
+        "Bitcoin Cash": "BCH-USD",
+        "Cardano": "ADA-USD",
+        "Chainlink": "LINK-USD",
+        "Dogecoin": "DOGE-USD",
+        "Ethereum": "ETH-USD",
+        "Litecoin": "LTC-USD",
+        "Polkadot": "DOT-USD",
+        "Polygon": "MATIC-USD",
+        "Shiba Inu": "SHIB-USD",
+        "Solana": "SOL-USD",
+        "Uniswap": "UNI-USD",
+        "XRP": "XRP-USD"
+    },
+    "FOREX - MAJORS": {
+        "AUD/USD": "AUDUSD=X",
+        "EUR/USD": "EURUSD=X",
+        "GBP/USD": "GBPUSD=X",
+        "NZD/USD": "NZDUSD=X",
+        "USD/CAD": "CAD=X",
+        "USD/CHF": "CHF=X",
+        "USD/JPY": "JPY=X"
+    },
+    "FOREX - CROSSES & EXOTICS": {
+        "AUD/JPY": "AUDJPY=X",
+        "EUR/GBP": "EURGBP=X",
+        "EUR/JPY": "EURJPY=X",
+        "EUR/SEK": "EURSEK=X",
+        "GBP/JPY": "GBPJPY=X",
+        "USD/BRL (Brazil)": "BRL=X",
+        "USD/CNY (China)": "CNY=X",
+        "USD/HKD (Hong Kong)": "HKD=X",
+        "USD/INR (India)": "INR=X",
+        "USD/KRW (South Korea)": "KRW=X",
+        "USD/MXN (Mexico)": "MXN=X",
+        "USD/SGD (Singapore)": "SGD=X",
+        "USD/TRY (Turkey)": "TRY=X",
+        "USD/ZAR (South Africa)": "ZAR=X"
+    },
+    "INDICES - AMERICAS": {
+        "Bovespa (Brazil)": "^BVSP",
+        "Dow Jones 30": "^DJI",
+        "IPC Mexico": "^MXX",
+        "Merval (Argentina)": "^MERV",
+        "Nasdaq 100": "^NDX",
+        "NYSE Composite": "^NYA",
+        "Russell 2000": "^RUT",
+        "S&P 500": "^GSPC",
+        "TSX Composite (Canada)": "^GSPTSE",
+        "VIX (Volatility)": "^VIX"
+    },
+    "INDICES - ASIA PACIFIC": {
+        "ASX 200 (Australia)": "^AXJO",
+        "BSE SENSEX (India)": "^BSESN",
+        "Hang Seng (Hong Kong)": "^HSI",
+        "KOSPI (South Korea)": "^KS11",
+        "Nifty 50 (India)": "^NSEI",
+        "Nikkei 225 (Japan)": "^N225",
+        "Shanghai Composite": "000001.SS",
+        "Shenzhen Component": "399001.SZ",
+        "STI (Singapore)": "^STI",
+        "TAIEX (Taiwan)": "^TWII"
+    },
+    "INDICES - EUROPE": {
+        "AEX (Netherlands)": "^AEX",
+        "BEL 20 (Belgium)": "^BFX",
+        "CAC 40 (France)": "^FCHI",
+        "DAX (Germany)": "^GDAXI",
+        "Euro Stoxx 50": "^STOXX50E",
+        "FTSE 100 (UK)": "^FTSE",
+        "FTSE MIB (Italy)": "FTSEMIB.MI",
+        "IBEX 35 (Spain)": "^IBEX",
+        "PSI 20 (Portugal)": "^PSI20",
+        "SMI (Switzerland)": "^SSMI"
+    },
+    "STOCKS - FRANCE (CAC 40)": {
+        "Air Liquide": "AI.PA",
+        "Airbus": "AIR.PA",
+        "AXA": "CS.PA",
+        "BNP Paribas": "BNP.PA",
+        "Danone": "BN.PA",
+        "EssilorLuxottica": "EL.PA",
+        "Hermes": "RMS.PA",
+        "Kering": "KER.PA",
+        "L'Oreal": "OR.PA",
+        "LVMH": "MC.PA",
+        "Orange": "ORA.PA",
+        "Pernod Ricard": "RI.PA",
+        "Safran": "SAF.PA",
+        "Saint-Gobain": "SGO.PA",
+        "Sanofi": "SAN.PA",
+        "Schneider Electric": "SU.PA",
+        "TotalEnergies": "TTE.PA",
+        "Vinci": "DG.PA"
+    },
+    "STOCKS - US TECH & GIANTS": {
+        "AMD": "AMD",
+        "Adobe": "ADBE",
+        "Airbnb": "ABNB",
+        "Alphabet (Google)": "GOOGL",
+        "Amazon": "AMZN",
+        "Apple": "AAPL",
+        "Berkshire Hathaway": "BRK-B",
+        "Broadcom": "AVGO",
+        "Coca-Cola": "KO",
+        "Costco": "COST",
+        "Eli Lilly": "LLY",
+        "Exxon Mobil": "XOM",
+        "JPMorgan Chase": "JPM",
+        "Johnson & Johnson": "JNJ",
+        "Mastercard": "MA",
+        "Meta Platforms": "META",
+        "Microsoft": "MSFT",
+        "Netflix": "NFLX",
+        "Nvidia": "NVDA",
+        "Oracle": "ORCL",
+        "PepsiCo": "PEP",
+        "Pfizer": "PFE",
+        "Procter & Gamble": "PG",
+        "Salesforce": "CRM",
+        "Tesla": "TSLA",
+        "Uber": "UBER",
+        "Visa": "V",
+        "Walmart": "WMT"
+    }
+}
+
+# Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
+FLAT_ASSETS = {}
+for category in sorted(ASSET_DB.keys()):
+    items = ASSET_DB[category]
+    for name in sorted(items.keys()):
+        label = f"{category} | {name} ({items[name]})"
+        FLAT_ASSETS[label] = items[name]
+
+# Reverse lookup (Ticker -> Label) for URL handling
+TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
+
+# =========================
 # Helpers & Logic
 # =========================
 
 def _normalize_weights(w: dict) -> dict:
-    """Keep only non-negative numbers, normalize to sum to 1."""
     ww = {}
     for k, v in w.items():
         try:
             vv = float(v)
             if vv >= 0: ww[k] = vv
         except: continue
-    
     s = sum(ww.values())
     if s <= 0: return {k: 1.0/len(ww) for k in ww} if ww else {}
     return {k: v/s for k, v in ww.items()}
@@ -49,22 +231,18 @@ def simulate_portfolio(prices_df: pd.DataFrame, weights: dict, rebal_rule: str, 
     w_target = _normalize_weights({t: weights.get(t, 0.0) for t in tickers})
     w_vec = np.array([w_target.get(t, 0.0) for t in tickers])
     
-    # Simple rebalancing logic
     rdates = set(rebalance_dates(rets.index, rebal_rule))
-    
     current_w = w_vec.copy()
     port_rets = []
     
     for dt, row in rets.iterrows():
         if dt in rdates:
-            current_w = w_vec.copy() # Reset to target
+            current_w = w_vec.copy() # Reset
         
-        # Period return
         r = row.values
         port_ret = np.dot(current_w, r)
         port_rets.append(port_ret)
         
-        # Update weights based on asset performance (Drift)
         current_w = current_w * (1 + r) / (1 + port_ret)
 
     port_series = pd.Series(port_rets, index=rets.index)
@@ -113,15 +291,53 @@ def portfolio_page():
     with st.container(border=True):
         st.subheader("Controls")
         
-        c1, c2, c3, c4 = st.columns(4)
+        # INCREASED WIDTH for Asset Selection
+        c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+        
         with c1:
-            # Persistent URL Logic
-            default_tickers = st.query_params.get("tickers", "BZ=F, GC=F, HG=F")
-            tickers_txt = st.text_input("Tickers (comma separated)", value=default_tickers)
+            # 1. Parsing URL Tickers
+            # Expected format: "TICKER1,TICKER2,TICKER3"
+            url_tickers_str = st.query_params.get("tickers", "BZ=F,GC=F,HG=F")
+            url_tickers = [t.strip() for t in url_tickers_str.split(",") if t.strip()]
             
-            # Update URL only if changed
-            if tickers_txt != st.query_params.get("tickers"):
-                st.query_params["tickers"] = tickers_txt
+            # 2. Separate Known vs Custom
+            default_options = []
+            custom_tickers_list = []
+            
+            for t in url_tickers:
+                if t in TICKER_TO_LABEL:
+                    default_options.append(TICKER_TO_LABEL[t])
+                else:
+                    custom_tickers_list.append(t)
+            
+            # 3. Multiselect Widget
+            selected_labels = st.multiselect(
+                "Select Assets (3 to 8)",
+                options=FLAT_ASSETS.keys(),
+                default=default_options,
+                max_selections=8
+            )
+            
+            # 4. Optional Custom Tickers Input
+            custom_str = st.text_input(
+                "Add Custom Tickers (comma separated, optional)", 
+                value=",".join(custom_tickers_list),
+                help="Add tickers not in the list, e.g., 'AAPL, MSFT'"
+            )
+            
+            # 5. Combine & Validation
+            selected_tickers = [FLAT_ASSETS[l] for l in selected_labels]
+            if custom_str:
+                custom_parsed = [t.strip().upper() for t in custom_str.split(",") if t.strip()]
+                selected_tickers.extend(custom_parsed)
+            
+            # Deduplicate preserving order
+            final_tickers = list(dict.fromkeys(selected_tickers))
+            
+            # Update URL
+            new_url_str = ",".join(final_tickers)
+            if new_url_str != url_tickers_str:
+                st.query_params["tickers"] = new_url_str
 
         with c2:
             period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y", "10y", "max"], index=4)
@@ -140,28 +356,31 @@ def portfolio_page():
         with sc2:
             rebal_freq = st.selectbox("Rebalancing", ["Monthly", "Weekly", "Daily"], index=0)
         
-        tickers = [t.strip().upper() for t in tickers_txt.split(",") if t.strip()]
-        
+        # Display Warnings / Blockers
+        if len(final_tickers) < 3:
+            st.error(f"Please select at least 3 assets. Currently selected: {len(final_tickers)}")
+            return
+        if len(final_tickers) > 8:
+            st.warning(f"You have selected {len(final_tickers)} assets. Performance might be slow.")
+
+        # Custom Weights Inputs
         weights = {}
         if alloc_type == "Custom Weights":
             with sc3:
                 st.caption("Weights (will be normalized)")
-                cols = st.columns(len(tickers))
-                for i, t in enumerate(tickers):
+                # Dynamic columns based on count
+                cols = st.columns(len(final_tickers))
+                for i, t in enumerate(final_tickers):
                     with cols[i]:
                         weights[t] = st.number_input(f"{t}", value=1.0, step=0.1, key=f"w_{t}")
         else:
-            weights = {t: 1.0 for t in tickers}
+            weights = {t: 1.0 for t in final_tickers}
 
     # ==========================================
     # Data Loading
     # ==========================================
-    if len(tickers) < 2:
-        st.error("Please select at least 2 tickers.")
-        return
-
     price_data = {}
-    for t in tickers:
+    for t in final_tickers:
         try:
             df = load_price_history(t, period=period, interval=interval)
             if df is not None and not df.empty:
@@ -170,8 +389,8 @@ def portfolio_page():
                 price_data[t] = s
         except: pass
     
-    if len(price_data) < 2:
-        st.error("Not enough valid data loaded.")
+    if len(price_data) < 3:
+        st.error("Not enough valid data loaded (need at least 3 valid assets).")
         return
 
     prices_df = _align_prices(price_data)
@@ -210,7 +429,6 @@ def portfolio_page():
 
     # Chart 1: Portfolio Value (Blue)
     df_chart = port_equity.to_frame("Portfolio Value").reset_index()
-    # Dynamic date col name detection
     date_col = df_chart.columns[0]
     df_chart = df_chart.rename(columns={date_col: "date"})
     
@@ -234,24 +452,21 @@ def portfolio_page():
     df_norm = norm_assets.copy()
     df_norm["Portfolio"] = norm_port
     
-    # Melt safely
     df_reset = df_norm.reset_index()
     id_var = df_reset.columns[0]
     df_melt = df_reset.melt(id_vars=id_var, var_name="Asset", value_name="Value").rename(columns={id_var: "date"})
 
-    # Highlight Logic
     highlight = alt.condition(alt.datum.Asset == 'Portfolio', alt.value("#FF4B4B"), alt.value("#4A90E2"))
     stroke_width = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1))
     opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.5))
 
-    # AJOUT VITAL : detail="Asset"
     c_norm = alt.Chart(df_melt).mark_line().encode(
         x=alt.X("date:T", axis=alt.Axis(title=None)),
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
         color=highlight, 
         strokeWidth=stroke_width,
         opacity=opacity,
-        detail="Asset", # <--- C'EST CA QUI MANQUAIT !
+        detail="Asset",
         tooltip=["date:T", "Asset:N", alt.Tooltip("Value:Q", format=".1f")]
     ).properties(height=400)
 
@@ -288,8 +503,9 @@ def portfolio_page():
 
     with r2:
         st.subheader("Effective Weights")
-        final_w = _normalize_weights({t: weights.get(t, 0) for t in tickers})
-        df_w = pd.DataFrame(list(final_w.items()), columns=["Asset", "Weight"])
+        # Recalculate based on custom input
+        w_target = _normalize_weights({t: weights.get(t, 0.0) for t in final_tickers})
+        df_w = pd.DataFrame(list(w_target.items()), columns=["Asset", "Weight"])
         
         pie = alt.Chart(df_w).mark_arc(innerRadius=50).encode(
             theta=alt.Theta("Weight", stack=True),

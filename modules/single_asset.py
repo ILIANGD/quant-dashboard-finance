@@ -213,7 +213,7 @@ def plot_forecast_with_band(history: pd.Series, fc: pd.DataFrame):
 # =========================
 
 def single_asset_page():
-    st.title("Single Asset Analysis – Brent (BZ=F)")
+    st.title("Single Asset Analysis")
 
     # Auto refresh every 5 minutes
     st_autorefresh(interval=300_000, key="auto_refresh_5min")

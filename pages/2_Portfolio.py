@@ -1,12 +1,21 @@
 import streamlit as st
 import sys
-import os
+from pathlib import Path
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# 1. On ajoute le dossier racine au chemin pour que Python trouve "modules"
+root_path = Path(__file__).parent.parent
+sys.path.append(str(root_path))
 
-# from modules.portfolio import portfolio_page (Tu décommenteras ça quand Quant B aura fini)
+# 2. On importe la fonction principale depuis le module qu'on vient de créer
+from modules.portfolio import portfolio_page
 
-st.set_page_config(page_title="Portfolio Management", layout="wide")
+# 3. Configuration de la page
+st.set_page_config(
+    page_title="Portfolio Manager",
+    page_icon="💼",
+    layout="wide"
+)
 
-st.title("Construction du Portefeuille")
-st.info("Ce module est en cours de développement.")
+# 4. Lancement de la page
+if __name__ == "__main__":
+    portfolio_page()

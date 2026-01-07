@@ -296,7 +296,7 @@ def single_asset_page():
     # 3. PERFORMANCE (Chart Style Double Axe)
     # ==========================================
     st.divider()
-    st.subheader(f"Price & Strategy Performance ({strat_label})")
+    st.subheader(f"Asset Price vs Strategy Performance ({strat_label})")
     
     df_perf = pd.concat([prices, equity_sel * 100], axis=1).dropna()
     df_perf.columns = ["Asset Price ($)", "Strategy (Base 100)"]

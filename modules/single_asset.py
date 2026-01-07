@@ -218,8 +218,16 @@ def single_asset_page():
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        ticker = st.text_input("Ticker", value="BZ=F")
-
+        # 1. On regarde si un ticker est déjà dans l'URL, sinon on prend "BZ=F"
+        default_ticker = st.query_params.get("ticker", "BZ=F")
+        
+        # 2. On crée l'input avec cette valeur par défaut
+        ticker = st.text_input("Ticker", value=default_ticker)
+        
+        # 3. Si le ticker change, on met à jour l'URL instantanément
+        if ticker != st.query_params.get("ticker"):
+            st.query_params["ticker"] = ticker
+        
     with col2:
         period = st.selectbox(
             "Lookback period",

@@ -288,12 +288,11 @@ def single_asset_page():
     st.divider()
     st.subheader(f"Price & Strategy Performance ({strat_label})")
     
-    # Prepare Data: Left Axis = Price ($), Right Axis = Base 100
-    df_perf = pd.DataFrame({
-        "date": prices.index,
-        "Asset Price ($)": prices.values,
-        "Strategy (Base 100)": equity_sel.values * 100
-    })
+    # CORRECTION ICI: Alignement automatique des longueurs via concat
+    # Utilisation de dropna() pour n'afficher que la période où la stratégie existe
+    df_perf = pd.concat([prices, equity_sel * 100], axis=1).dropna()
+    df_perf.columns = ["Asset Price ($)", "Strategy (Base 100)"]
+    df_perf = df_perf.reset_index().rename(columns={df_perf.index.name or "index": "date"})
 
     # Base Chart
     base = alt.Chart(df_perf).encode(

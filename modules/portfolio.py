@@ -107,8 +107,6 @@ def portfolio_page():
     st.title("Portfolio Management")
     st.autorefresh = st_autorefresh(interval=300_000, key="auto_refresh_port")
 
-    DEFAULT_TICKERS = "BZ=F, GC=F, HG=F"
-    
     # ==========================================
     # 1. CONTROLS
     # ==========================================
@@ -118,7 +116,14 @@ def portfolio_page():
         # Row 1: Global Settings
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            tickers_txt = st.text_input("Tickers (comma separated)", value=DEFAULT_TICKERS)
+            # 1. Retrieve tickers from URL or use default
+            default_tickers = st.query_params.get("tickers", "BZ=F, GC=F, HG=F")
+            tickers_txt = st.text_input("Tickers (comma separated)", value=default_tickers)
+            
+            # 2. Update URL if changed
+            if tickers_txt != st.query_params.get("tickers"):
+                st.query_params["tickers"] = tickers_txt
+
         with c2:
             period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y", "10y", "max"], index=4)
         with c3:
@@ -208,7 +213,6 @@ def portfolio_page():
 
     # Chart 1: Portfolio Value (Blue)
     df_chart = port_equity.to_frame("Portfolio Value").reset_index()
-    # Ensure correct column name for melt/charts
     date_col = df_chart.columns[0]
     df_chart = df_chart.rename(columns={date_col: "date"})
     
@@ -232,12 +236,10 @@ def portfolio_page():
     df_norm = norm_assets.copy()
     df_norm["Portfolio"] = norm_port
     
-    # CORRECTION CRASH: Gestion dynamique du nom de la colonne date
     df_reset = df_norm.reset_index()
-    id_var = df_reset.columns[0] # Récupère le nom réel (Date, index, etc.)
+    id_var = df_reset.columns[0]
     df_melt = df_reset.melt(id_vars=id_var, var_name="Asset", value_name="Value").rename(columns={id_var: "date"})
 
-    # Highlight Portfolio in Red, others in Blue/Grey
     highlight = alt.condition(alt.datum.Asset == 'Portfolio', alt.value("#FF4B4B"), alt.value("#4A90E2"))
     stroke_width = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1))
     opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.5))
@@ -265,7 +267,6 @@ def portfolio_page():
         st.subheader("Correlation Matrix")
         corr = prices_df.pct_change().corr()
         
-        # CORRECTION CRASH: Idem pour la corrélation
         corr_reset = corr.reset_index()
         cid_var = corr_reset.columns[0]
         corr_melt = corr_reset.melt(id_vars=cid_var).rename(columns={cid_var: "var1", "variable": "var2"})

@@ -370,7 +370,7 @@ def single_asset_page():
             x=x_axis,
             y=alt.Y("lower:Q", scale=alt.Scale(zero=False)),
             y2="upper:Q",
-            color=alt.value("#FF4B4B"), fill=alt.datum("Intervalle de confiance 95%") 
+            color=alt.value("#FF4B4B"), fill=alt.datum("Confidence interval 95%") 
         )
 
         chart = alt.layer(c_hist, c_band, c_fc).properties(height=500).configure_legend(

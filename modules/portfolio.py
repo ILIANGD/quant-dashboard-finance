@@ -187,7 +187,6 @@ ASSET_DB = {
 }
 
 # Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
-# Categories are sorted alphabetically by key definition above
 FLAT_ASSETS = {}
 for category in sorted(ASSET_DB.keys()):
     items = ASSET_DB[category]
@@ -204,14 +203,12 @@ TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 # =========================
 
 def _normalize_weights(w: dict) -> dict:
-    """Keep only non-negative numbers, normalize to sum to 1."""
     ww = {}
     for k, v in w.items():
         try:
             vv = float(v)
             if vv >= 0: ww[k] = vv
         except: continue
-    
     s = sum(ww.values())
     if s <= 0: return {k: 1.0/len(ww) for k in ww} if ww else {}
     return {k: v/s for k, v in ww.items()}
@@ -235,22 +232,18 @@ def simulate_portfolio(prices_df: pd.DataFrame, weights: dict, rebal_rule: str, 
     w_target = _normalize_weights({t: weights.get(t, 0.0) for t in tickers})
     w_vec = np.array([w_target.get(t, 0.0) for t in tickers])
     
-    # Simple rebalancing logic
     rdates = set(rebalance_dates(rets.index, rebal_rule))
-    
     current_w = w_vec.copy()
     port_rets = []
     
     for dt, row in rets.iterrows():
         if dt in rdates:
-            current_w = w_vec.copy() # Reset to target
+            current_w = w_vec.copy() # Reset
         
-        # Period return
         r = row.values
         port_ret = np.dot(current_w, r)
         port_rets.append(port_ret)
         
-        # Update weights based on asset performance (Drift)
         current_w = current_w * (1 + r) / (1 + port_ret)
 
     port_series = pd.Series(port_rets, index=rets.index)
@@ -312,15 +305,21 @@ def portfolio_page():
             for t in url_tickers:
                 if t in TICKER_TO_LABEL:
                     default_options.append(TICKER_TO_LABEL[t])
-                # If unknown/custom in URL, we can't easily show it in multiselect restricted to keys
-                # So we focus on the curated list as requested.
+                # If unknown/custom, we skip visual selection in this curated mode
             
-            # 3. Multiselect Widget (NO Custom Input)
+            # Helper to strip category from display
+            def clean_label(label):
+                if " | " in label:
+                    return label.split(" | ", 1)[1]
+                return label
+
+            # 3. Multiselect Widget (Clean Display)
             selected_labels = st.multiselect(
                 "Select Assets (3 to 8)",
                 options=FLAT_ASSETS.keys(),
                 default=default_options,
-                max_selections=8
+                max_selections=8,
+                format_func=clean_label
             )
             
             # 4. Resolve Selection
@@ -349,7 +348,6 @@ def portfolio_page():
         with sc2:
             rebal_freq = st.selectbox("Rebalancing", ["Monthly", "Weekly", "Daily"], index=0)
         
-        # Display Warnings / Blockers
         if len(final_tickers) < 3:
             st.error(f"Please select at least 3 assets. Currently selected: {len(final_tickers)}")
             return
@@ -446,19 +444,25 @@ def portfolio_page():
     id_var = df_reset.columns[0]
     df_melt = df_reset.melt(id_vars=id_var, var_name="Asset", value_name="Value").rename(columns={id_var: "date"})
 
-    # Highlight Logic: Portfolio = Thicker Line + Explicit Color if needed, Assets = Distinct Colors
-    # Note: We use the 'Asset' field for color to get distinct colors for everything.
-    # We use strokeWidth to emphasize Portfolio.
+    # Highlight Logic: Portfolio = Red Thick, Others = Category Colors (automatic)
+    # We define the color scale ONLY for Portfolio. For others, we let Altair choose or map them.
+    # To ensure distinct colors, we map 'Asset' to color.
+    # BUT we want Portfolio RED.
+    
+    # We create a scale where 'Portfolio' is Red, and others get assigned from a standard palette.
+    domain = ["Portfolio"] + list(prices_df.columns)
+    range_ = ["#FF4B4B"] + ["#4A90E2", "#50C878", "#FFD700", "#9370DB", "#FF8C00", "#00CED1", "#C71585", "#808080"][:len(prices_df.columns)]
     
     stroke_width = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1))
-    opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.7))
+    opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.6))
 
     c_norm = alt.Chart(df_melt).mark_line().encode(
         x=alt.X("date:T", axis=alt.Axis(title=None)),
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
-        color=alt.Color("Asset:N", legend=alt.Legend(orient="bottom")), # DISTINCT COLORS FOR ALL
+        color=alt.Color("Asset:N", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(orient="bottom")),
         strokeWidth=stroke_width,
         opacity=opacity,
+        detail="Asset",
         tooltip=["date:T", "Asset:N", alt.Tooltip("Value:Q", format=".1f")]
     ).properties(height=400)
 
@@ -495,13 +499,12 @@ def portfolio_page():
 
     with r2:
         st.subheader("Effective Weights")
-        # Recalculate based on custom input
         w_target = _normalize_weights({t: weights.get(t, 0.0) for t in final_tickers})
         df_w = pd.DataFrame(list(w_target.items()), columns=["Asset", "Weight"])
         
         pie = alt.Chart(df_w).mark_arc(innerRadius=50).encode(
             theta=alt.Theta("Weight", stack=True),
-            color=alt.Color("Asset", scale=alt.Scale(scheme="category10")),
+            color=alt.Color("Asset", scale=alt.Scale(domain=domain, range=range_)),
             tooltip=["Asset", alt.Tooltip("Weight", format=".1%")]
         ).properties(height=300)
         

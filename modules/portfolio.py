@@ -52,7 +52,6 @@ def simulate_portfolio(prices_df: pd.DataFrame, weights: dict, rebal_rule: str, 
     # Simple rebalancing logic
     rdates = set(rebalance_dates(rets.index, rebal_rule))
     
-    # Vectorized approximation for speed
     current_w = w_vec.copy()
     port_rets = []
     
@@ -208,7 +207,10 @@ def portfolio_page():
     st.subheader("Performance Analysis")
 
     # Chart 1: Portfolio Value (Blue)
-    df_chart = port_equity.to_frame("Portfolio Value").reset_index().rename(columns={"index": "date"})
+    df_chart = port_equity.to_frame("Portfolio Value").reset_index()
+    # Ensure correct column name for melt/charts
+    date_col = df_chart.columns[0]
+    df_chart = df_chart.rename(columns={date_col: "date"})
     
     base = alt.Chart(df_chart).encode(
         x=alt.X("date:T", axis=alt.Axis(format="%d/%m/%Y", title=None, grid=True, gridOpacity=0.3))
@@ -229,18 +231,21 @@ def portfolio_page():
     
     df_norm = norm_assets.copy()
     df_norm["Portfolio"] = norm_port
-    df_melt = df_norm.reset_index().melt(id_vars="index", var_name="Asset", value_name="Value").rename(columns={"index": "date"})
+    
+    # CORRECTION CRASH: Gestion dynamique du nom de la colonne date
+    df_reset = df_norm.reset_index()
+    id_var = df_reset.columns[0] # Récupère le nom réel (Date, index, etc.)
+    df_melt = df_reset.melt(id_vars=id_var, var_name="Asset", value_name="Value").rename(columns={id_var: "date"})
 
     # Highlight Portfolio in Red, others in Blue/Grey
     highlight = alt.condition(alt.datum.Asset == 'Portfolio', alt.value("#FF4B4B"), alt.value("#4A90E2"))
     stroke_width = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1))
     opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.5))
 
-    # CORRECTION ICI: Suppression de l'argument color en double
     c_norm = alt.Chart(df_melt).mark_line().encode(
         x=alt.X("date:T", axis=alt.Axis(title=None)),
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
-        color=highlight, # On utilise la condition (Portfolio=Rouge, Autres=Bleu)
+        color=highlight,
         strokeWidth=stroke_width,
         opacity=opacity,
         tooltip=["date:T", "Asset:N", alt.Tooltip("Value:Q", format=".1f")]
@@ -260,8 +265,11 @@ def portfolio_page():
         st.subheader("Correlation Matrix")
         corr = prices_df.pct_change().corr()
         
-        # Heatmap Altair
-        corr_melt = corr.reset_index().melt(id_vars="index").rename(columns={"index": "var1", "variable": "var2"})
+        # CORRECTION CRASH: Idem pour la corrélation
+        corr_reset = corr.reset_index()
+        cid_var = corr_reset.columns[0]
+        corr_melt = corr_reset.melt(id_vars=cid_var).rename(columns={cid_var: "var1", "variable": "var2"})
+
         heatmap = alt.Chart(corr_melt).mark_rect().encode(
             x=alt.X("var1:N", title=None),
             y=alt.Y("var2:N", title=None),

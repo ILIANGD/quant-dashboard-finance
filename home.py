@@ -1,25 +1,149 @@
 import streamlit as st
+import pandas as pd
+from services.data_loader import load_live_quote
 
+# ==========================================
+# Page Configuration
+# ==========================================
 st.set_page_config(
     page_title="Quant Dashboard",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-st.title("📊 Quant Research Dashboard")
+# ==========================================
+# CSS Styling (Clean Professional Look)
+# ==========================================
+st.markdown("""
+    <style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    h1 {
+        font-weight: 700;
+        letter-spacing: -1px;
+    }
+    h3 {
+        font-weight: 600;
+        color: #4A90E2;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.6rem;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-st.markdown("### Bienvenue sur la plateforme de recherche quantitative.")
-st.info("Sélectionnez un module ci-dessous pour démarrer.")
+# ==========================================
+# Market Pulse Data
+# ==========================================
+MARKET_TICKERS = {
+    "S&P 500": "^GSPC",
+    "Nasdaq 100": "^NDX",
+    "CAC 40": "^FCHI",
+    "Gold": "GC=F",
+    "Brent Oil": "BZ=F",
+    "Bitcoin": "BTC-USD",
+    "EUR/USD": "EURUSD=X"
+}
 
-# Création de deux colonnes pour les boutons
-col1, col2 = st.columns(2)
+def display_market_pulse():
+    st.subheader("Global Market Pulse")
+    
+    # Create 7 columns for the tickers
+    cols = st.columns(len(MARKET_TICKERS))
+    
+    for i, (name, ticker) in enumerate(MARKET_TICKERS.items()):
+        with cols[i]:
+            try:
+                data = load_live_quote(ticker)
+                price = data.get("last_price")
+                prev = data.get("prev_close")
+                
+                if price and prev:
+                    delta = price - prev
+                    delta_pct = (delta / prev)
+                    
+                    st.metric(
+                        label=name,
+                        value=f"{price:,.2f}",
+                        delta=f"{delta_pct:.2%}"
+                    )
+                else:
+                    st.metric(label=name, value="N/A")
+            except:
+                st.metric(label=name, value="Error")
+    
+    st.markdown("---")
 
-with col1:
-    st.markdown("#### 1. Analyse Univariée")
-    # Ce bouton redirige vers la page Single Asset
-    st.page_link("pages/1_Single_Asset.py", label="Aller vers Single Asset", icon="📈", use_container_width=True)
+# ==========================================
+# Main Content
+# ==========================================
 
-with col2:
-    st.markdown("#### 2. Gestion de Portefeuille")
-    # Ce bouton redirige vers la page Portfolio
-    st.page_link("pages/2_Portfolio.py", label="Aller vers Portfolio", icon="💼", use_container_width=True)
+def home_page():
+    # Hero Section
+    st.title("Quantitative Finance Dashboard")
+    st.markdown(
+        """
+        **Advanced analytics platform for asset pricing, strategy backtesting, and portfolio optimization.**
+        
+        Leverage institutional-grade tools to analyze trends, forecast movements using machine learning, 
+        and construct diversified portfolios with risk-adjusted performance metrics.
+        """
+    )
+    
+    st.markdown("---")
+    
+    # 1. Market Overview
+    display_market_pulse()
+    
+    # 2. Module Navigation Cards
+    st.subheader("Analytics Modules")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        with st.container(border=True):
+            st.subheader("Single Asset Analysis")
+            st.markdown(
+                """
+                Deep dive into individual financial instruments.
+                
+                **Key Features:**
+                * **Backtesting Engines:** Buy & Hold, Momentum (MA Crossover), Volatility Breakout.
+                * **AI Forecasting:** Linear Regression trends with confidence intervals.
+                * **Risk Metrics:** Sharpe Ratio, Sortino, Max Drawdown, Calmar Ratio.
+                * **Interactive Charts:** Zoomable price history and strategy performance curves.
+                """
+            )
+            st.info("Navigate to 'Single Asset' in the sidebar to begin.")
+
+    with col2:
+        with st.container(border=True):
+            st.subheader("Portfolio Management")
+            st.markdown(
+                """
+                Construct, simulate, and optimize multi-asset portfolios.
+                
+                **Key Features:**
+                * **Asset Allocation:** Support for equal-weight or custom capital allocation.
+                * **Rebalancing:** Simulate Daily, Weekly, or Monthly rebalancing strategies.
+                * **Correlation Analysis:** Heatmaps to identify diversification opportunities.
+                * **Relative Performance:** Compare portfolio growth against underlying assets (Base 100).
+                """
+            )
+            st.info("Navigate to 'Portfolio' in the sidebar to begin.")
+
+    # 3. Footer / Disclaimer
+    st.markdown("---")
+    st.caption(
+        """
+        **Disclaimer:** This dashboard is for informational and educational purposes only. 
+        It does not constitute financial advice. Past performance is not indicative of future results. 
+        Market data is provided by Yahoo Finance and may be delayed.
+        """
+    )
+
+if __name__ == "__main__":
+    home_page()

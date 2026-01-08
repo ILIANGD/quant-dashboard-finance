@@ -186,7 +186,7 @@ ASSET_DB = {
     }
 }
 
-# Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
+# Flatten for dropdown
 FLAT_ASSETS = {}
 for category in sorted(ASSET_DB.keys()):
     items = ASSET_DB[category]
@@ -194,7 +194,6 @@ for category in sorted(ASSET_DB.keys()):
         label = f"{category} | {name} ({items[name]})"
         FLAT_ASSETS[label] = items[name]
 
-# Reverse lookup (Ticker -> Label) for URL handling
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 
 
@@ -203,6 +202,7 @@ TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 # =========================
 
 def _normalize_weights(w: dict) -> dict:
+    """Keep only non-negative numbers, normalize to sum to 1."""
     ww = {}
     for k, v in w.items():
         try:
@@ -292,28 +292,21 @@ def portfolio_page():
     with st.container(border=True):
         st.subheader("Controls")
         
-        # INCREASED WIDTH for Asset Selection
         c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
         
         with c1:
-            # 1. Parsing URL Tickers
             url_tickers_str = st.query_params.get("tickers", "BZ=F,GC=F,HG=F")
             url_tickers = [t.strip() for t in url_tickers_str.split(",") if t.strip()]
             
-            # 2. Match URL tickers to known labels if possible
             default_options = []
             for t in url_tickers:
                 if t in TICKER_TO_LABEL:
                     default_options.append(TICKER_TO_LABEL[t])
-                # If unknown/custom, we skip visual selection in this curated mode
             
-            # Helper to strip category from display
             def clean_label(label):
-                if " | " in label:
-                    return label.split(" | ", 1)[1]
+                if " | " in label: return label.split(" | ", 1)[1]
                 return label
 
-            # 3. Multiselect Widget (Clean Display)
             selected_labels = st.multiselect(
                 "Select Assets (3 to 8)",
                 options=FLAT_ASSETS.keys(),
@@ -322,11 +315,9 @@ def portfolio_page():
                 format_func=clean_label
             )
             
-            # 4. Resolve Selection
             final_tickers = [FLAT_ASSETS[l] for l in selected_labels]
             final_tickers = list(dict.fromkeys(final_tickers)) # Deduplicate
             
-            # 5. Update URL
             new_url_str = ",".join(final_tickers)
             if new_url_str != url_tickers_str:
                 st.query_params["tickers"] = new_url_str
@@ -352,7 +343,6 @@ def portfolio_page():
             st.error(f"Please select at least 3 assets. Currently selected: {len(final_tickers)}")
             return
         
-        # Custom Weights Inputs
         weights = {}
         if alloc_type == "Custom Weights":
             with sc3:
@@ -387,6 +377,25 @@ def portfolio_page():
     port_equity = simulate_portfolio(prices_df, weights, rebal_freq, initial_capital)
     port_metrics = compute_metrics(port_equity)
 
+    # --- Calculation of Diversification Ratio ---
+    # DR = (Weighted Average of Asset Vols) / (Portfolio Vol)
+    asset_rets = prices_df.pct_change().dropna()
+    asset_vols = asset_rets.std() * np.sqrt(252)
+    
+    # Get normalized target weights used
+    w_target = _normalize_weights({t: weights.get(t, 0.0) for t in final_tickers})
+    
+    weighted_avg_vol = 0.0
+    for t, w in w_target.items():
+        if t in asset_vols:
+            weighted_avg_vol += w * asset_vols[t]
+            
+    port_vol = port_metrics.get('annual_vol', 0)
+    if port_vol > 0:
+        div_ratio = weighted_avg_vol / port_vol
+    else:
+        div_ratio = 1.0
+
     # ==========================================
     # 2. OVERVIEW & METRICS
     # ==========================================
@@ -401,13 +410,17 @@ def portfolio_page():
     with c_val:
         st.metric("Total Value", f"${curr_val:,.2f}", f"{total_ret:+.2%}")
         st.caption(f"Initial: ${start_val:,.2f}")
+        # Bouton Refresh
+        if st.button("Refresh Data", type="primary"):
+            st.rerun()
     
     with c_met:
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5 = st.columns(5)
         with m1: metric_card("Ann. Return", f"{port_metrics['annual_return']:.2%}")
         with m2: metric_card("Volatility", f"{port_metrics['annual_vol']:.2%}")
         with m3: metric_card("Sharpe", f"{port_metrics['sharpe']:.2f}")
         with m4: metric_card("Max Drawdown", f"{port_metrics['max_drawdown']:.2%}")
+        with m5: metric_card("Div. Ratio", f"{div_ratio:.2f}", "Diversification Ratio (>1 is better)")
 
     # ==========================================
     # 3. PERFORMANCE CHART
@@ -431,7 +444,7 @@ def portfolio_page():
     
     st.altair_chart(line.properties(height=400), use_container_width=True)
 
-    # Chart 2: Normalized Comparison (Portfolio vs Assets)
+    # Chart 2: Normalized Comparison
     st.subheader("Relative Performance (Base 100)")
     
     norm_assets = (prices_df / prices_df.iloc[0]) * 100
@@ -444,12 +457,6 @@ def portfolio_page():
     id_var = df_reset.columns[0]
     df_melt = df_reset.melt(id_vars=id_var, var_name="Asset", value_name="Value").rename(columns={id_var: "date"})
 
-    # Highlight Logic: Portfolio = Red Thick, Others = Category Colors (automatic)
-    # We define the color scale ONLY for Portfolio. For others, we let Altair choose or map them.
-    # To ensure distinct colors, we map 'Asset' to color.
-    # BUT we want Portfolio RED.
-    
-    # We create a scale where 'Portfolio' is Red, and others get assigned from a standard palette.
     domain = ["Portfolio"] + list(prices_df.columns)
     range_ = ["#FF4B4B"] + ["#4A90E2", "#50C878", "#FFD700", "#9370DB", "#FF8C00", "#00CED1", "#C71585", "#808080"][:len(prices_df.columns)]
     
@@ -469,7 +476,26 @@ def portfolio_page():
     st.altair_chart(c_norm, use_container_width=True)
 
     # ==========================================
-    # 4. COMPOSITION & RISK
+    # 4. INDIVIDUAL ASSET PERFORMANCE (BAR CHART)
+    # ==========================================
+    st.divider()
+    st.subheader("Individual Asset Performance")
+    
+    # Calculate total return for each asset over the period
+    total_returns = (prices_df.iloc[-1] - prices_df.iloc[0]) / prices_df.iloc[0]
+    df_perf = total_returns.to_frame("Total Return").reset_index().rename(columns={"index": "Asset"})
+    
+    bar_chart = alt.Chart(df_perf).mark_bar().encode(
+        x=alt.X("Total Return:Q", axis=alt.Axis(format="%")),
+        y=alt.Y("Asset:N", sort="-x", title=None),
+        color=alt.value("#4A90E2"),
+        tooltip=[alt.Tooltip("Asset:N"), alt.Tooltip("Total Return:Q", format=".2%")]
+    ).properties(height=300)
+    
+    st.altair_chart(bar_chart, use_container_width=True)
+
+    # ==========================================
+    # 5. COMPOSITION & RISK
     # ==========================================
     st.divider()
     st.header("Composition & Risk")
@@ -499,7 +525,6 @@ def portfolio_page():
 
     with r2:
         st.subheader("Effective Weights")
-        w_target = _normalize_weights({t: weights.get(t, 0.0) for t in final_tickers})
         df_w = pd.DataFrame(list(w_target.items()), columns=["Asset", "Weight"])
         
         pie = alt.Chart(df_w).mark_arc(innerRadius=50).encode(

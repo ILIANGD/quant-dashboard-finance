@@ -196,30 +196,48 @@ for category in sorted(ASSET_DB.keys()):
 
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 
+
 # =========================
-# State Management Helper
+# State Persistence Logic
 # =========================
 
-def init_portfolio_state():
-    """Ensure all session state variables exist to persist settings across page reloads."""
-    # 1. Tickers
-    if "p_tickers" not in st.session_state:
-        # Try loading from URL, else default
-        url_tickers_str = st.query_params.get("tickers", "BZ=F,GC=F,HG=F")
-        url_tickers = [t.strip() for t in url_tickers_str.split(",") if t.strip()]
-        
-        default_labels = []
-        for t in url_tickers:
-            if t in TICKER_TO_LABEL:
-                default_labels.append(TICKER_TO_LABEL[t])
-        st.session_state.p_tickers = default_labels
+def init_session_state():
+    """Force initialization of session state variables to ensure persistence."""
+    
+    # Default values
+    DEFAULT_TICKERS = ["BZ=F", "GC=F", "HG=F"] # Brent, Gold, Copper
+    DEFAULT_LOOKBACK = "5y"
+    DEFAULT_FREQ = "Daily"
+    DEFAULT_CAPITAL = 10000.0
+    DEFAULT_ALLOC = "Equal Weight"
+    DEFAULT_REBAL = "Monthly"
 
-    # 2. Settings
-    if "p_lookback" not in st.session_state: st.session_state.p_lookback = "5y"
-    if "p_freq" not in st.session_state: st.session_state.p_freq = "Daily"
-    if "p_capital" not in st.session_state: st.session_state.p_capital = 10000.0
-    if "p_alloc_type" not in st.session_state: st.session_state.p_alloc_type = "Custom Weights"
-    if "p_rebal" not in st.session_state: st.session_state.p_rebal = "Monthly"
+    # 1. Tickers: Priority = Session > URL > Default
+    if "p_tickers_list" not in st.session_state:
+        # Check URL
+        url_tickers_str = st.query_params.get("tickers", "")
+        if url_tickers_str:
+            url_tickers = [t.strip() for t in url_tickers_str.split(",") if t.strip()]
+            # Convert to labels
+            labels = []
+            for t in url_tickers:
+                if t in TICKER_TO_LABEL: labels.append(TICKER_TO_LABEL[t])
+            
+            if labels:
+                st.session_state.p_tickers_list = labels
+            else:
+                st.session_state.p_tickers_list = [TICKER_TO_LABEL[t] for t in DEFAULT_TICKERS if t in TICKER_TO_LABEL]
+        else:
+            # Use Default
+            st.session_state.p_tickers_list = [TICKER_TO_LABEL[t] for t in DEFAULT_TICKERS if t in TICKER_TO_LABEL]
+
+    # 2. Other settings
+    if "p_lookback" not in st.session_state: st.session_state.p_lookback = DEFAULT_LOOKBACK
+    if "p_freq" not in st.session_state: st.session_state.p_freq = DEFAULT_FREQ
+    if "p_capital" not in st.session_state: st.session_state.p_capital = DEFAULT_CAPITAL
+    if "p_alloc" not in st.session_state: st.session_state.p_alloc = DEFAULT_ALLOC
+    if "p_rebal" not in st.session_state: st.session_state.p_rebal = DEFAULT_REBAL
+
 
 # =========================
 # Helpers & Logic
@@ -273,14 +291,6 @@ def simulate_portfolio(prices_df: pd.DataFrame, weights: dict, rebal_rule: str, 
     equity = (1 + port_series).cumprod() * initial_capital
     return equity
 
-# =========================
-# Metrics UI
-# =========================
-
-def metric_card(label: str, value_str: str, help_text: str = None):
-    st.caption(f"**{label}**", help=help_text)
-    st.markdown(f"<div style='font-size:1.4em; font-weight:600;'>{value_str}</div>", unsafe_allow_html=True)
-
 def compute_metrics(series: pd.Series) -> dict:
     series = series.dropna()
     rets = series.pct_change().dropna()
@@ -291,7 +301,7 @@ def compute_metrics(series: pd.Series) -> dict:
     annual_return = (1 + mean_daily) ** 252 - 1
     annual_vol = vol_daily * np.sqrt(252)
     sharpe = annual_return / annual_vol if annual_vol != 0 else 0.0
-
+    
     cum = (1 + rets).cumprod()
     max_dd = float((cum / cum.cummax() - 1).min())
     calmar = annual_return / abs(max_dd) if max_dd != 0 else 0.0
@@ -301,6 +311,11 @@ def compute_metrics(series: pd.Series) -> dict:
         "sharpe": sharpe, "max_drawdown": max_dd, "calmar": calmar
     }
 
+def metric_card(label: str, value_str: str, help_text: str = None):
+    st.caption(f"**{label}**", help=help_text)
+    st.markdown(f"<div style='font-size:1.4em; font-weight:600;'>{value_str}</div>", unsafe_allow_html=True)
+
+
 # =========================
 # Main Page
 # =========================
@@ -308,9 +323,9 @@ def compute_metrics(series: pd.Series) -> dict:
 def portfolio_page():
     st.title("Portfolio Management")
     st.autorefresh = st_autorefresh(interval=300_000, key="auto_refresh_port")
-    
-    # Initialize Persistent State
-    init_portfolio_state()
+
+    # 1. Initialize State (Fixes persistence)
+    init_session_state()
 
     # ==========================================
     # 1. CONTROLS
@@ -325,11 +340,11 @@ def portfolio_page():
                 if " | " in label: return label.split(" | ", 1)[1]
                 return label
 
-            # Widget bound to session_state.p_tickers
+            # Widget bound to session_state key 'p_tickers_list'
             selected_labels = st.multiselect(
                 "Select Assets (3 to 8)",
                 options=FLAT_ASSETS.keys(),
-                key="p_tickers",
+                key="p_tickers_list", # Persistence Key
                 max_selections=8,
                 format_func=clean_label
             )
@@ -338,21 +353,15 @@ def portfolio_page():
             final_tickers = [FLAT_ASSETS[l] for l in selected_labels]
             final_tickers = list(dict.fromkeys(final_tickers)) 
             
-            # Sync URL
+            # Update URL quietly
             new_url_str = ",".join(final_tickers)
             if new_url_str != st.query_params.get("tickers"):
                 st.query_params["tickers"] = new_url_str
 
         with c2:
-            # Lookback bound to session_state.p_lookback
-            period = st.selectbox(
-                "Lookback", 
-                ["3mo", "6mo", "1y", "2y", "5y", "10y", "max"], 
-                key="p_lookback"
-            )
+            period = st.selectbox("Lookback", ["3mo", "6mo", "1y", "2y", "5y", "10y", "max"], key="p_lookback")
         with c3:
             interval_map = {"Daily": "1d", "Weekly": "1wk", "Monthly": "1mo"}
-            # Frequency bound to session_state.p_freq
             interval_label = st.selectbox("Frequency", list(interval_map.keys()), key="p_freq")
             interval = interval_map[interval_label]
         with c4:
@@ -362,7 +371,7 @@ def portfolio_page():
 
         sc1, sc2, sc3 = st.columns([1, 1, 2])
         with sc1:
-            alloc_type = st.selectbox("Allocation", ["Equal Weight", "Custom Weights"], key="p_alloc_type")
+            alloc_type = st.selectbox("Allocation", ["Equal Weight", "Custom Weights"], key="p_alloc")
         with sc2:
             rebal_freq = st.selectbox("Rebalancing", ["Monthly", "Weekly", "Daily"], key="p_rebal")
         
@@ -377,7 +386,8 @@ def portfolio_page():
                 cols = st.columns(len(final_tickers))
                 for i, t in enumerate(final_tickers):
                     with cols[i]:
-                        # Keys must be unique per asset to persist
+                        # Keys MUST be dynamic based on ticker to avoid conflicts, but specific enough to persist if possible
+                        # Simple persistence for weights is hard if list changes, we use defaults if key missing
                         weights[t] = st.number_input(f"{t}", value=1.0, step=0.1, key=f"w_{t}")
         else:
             weights = {t: 1.0 for t in final_tickers}
@@ -439,51 +449,25 @@ def portfolio_page():
         with m5: metric_card("Div. Ratio", f"{div_ratio:.2f}", "Diversification Ratio (>1 is better)")
 
     # ==========================================
-    # 3. PERFORMANCE CHART (Optimized for Lag)
+    # 3. PERFORMANCE CHART (Optimized WIDE format)
     # ==========================================
     st.divider()
     st.subheader("Relative Performance (Base 100)")
     
-    # Data Prep
+    # Data Prep: Create ONE Wide DataFrame
     norm_assets = (prices_df / prices_df.iloc[0]) * 100
     norm_port = (port_equity / port_equity.iloc[0]) * 100
-    df_norm = norm_assets.copy()
-    df_norm["Portfolio"] = norm_port
     
-    df_reset = df_norm.reset_index()
-    id_var = df_reset.columns[0]
-    df_melt = df_reset.melt(id_vars=id_var, var_name="Asset", value_name="Value").rename(columns={id_var: "date"})
-
+    # Copy to keep clean
+    df_wide = norm_assets.copy()
+    df_wide["Portfolio"] = norm_port
+    df_wide = df_wide.reset_index().rename(columns={df_wide.index.name or "Date": "date"})
+    
     # Colors
     domain = ["Portfolio"] + list(prices_df.columns)
     range_ = ["#FF4B4B"] + ["#4A90E2", "#50C878", "#FFD700", "#9370DB", "#FF8C00", "#00CED1", "#C71585", "#808080"][:len(prices_df.columns)]
-    
-    # --- ALTAIR CHART OPTIMIZATION ---
-    # To reduce lag, we avoid the complex "nearest" circle layer on every point.
-    # We use a standard interactive chart with a clean tooltip.
-    
-    # Base
-    chart_base = alt.Chart(df_melt).encode(
-        x=alt.X("date:T", axis=alt.Axis(title=None, format="%d/%m/%Y", grid=True, gridOpacity=0.3))
-    )
 
-    # Lines
-    lines = chart_base.mark_line().encode(
-        y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
-        color=alt.Color("Asset:N", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(orient="bottom")),
-        strokeWidth=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1.5)),
-        opacity=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.7)),
-        detail="Asset",
-        # Detailed tooltip for the hovered line
-        tooltip=[
-            alt.Tooltip("date:T", format="%d/%m/%Y"),
-            alt.Tooltip("Asset:N"),
-            alt.Tooltip("Value:Q", format=".2f")
-        ]
-    )
-
-    # Adding a Vertical Rule for "Cursor" feel (snaps to mouse x)
-    # Using 'nearest' only on the rule selector is lighter than rendering circles
+    # 1. Base Selection (Mouse X)
     hover = alt.selection_point(
         fields=["date"],
         nearest=True,
@@ -492,13 +476,41 @@ def portfolio_page():
         clear="mouseout"
     )
 
-    rule = alt.Chart(df_melt).mark_rule(color="gray", strokeWidth=1, strokeDash=[5,5]).encode(
+    # 2. Lines (Transform Fold to convert Wide -> Long internally for drawing lines)
+    # We use transform_fold so we can draw multiple lines from the wide dataframe
+    fold_cols = ["Portfolio"] + list(prices_df.columns)
+    
+    lines = alt.Chart(df_wide).transform_fold(
+        fold_cols,
+        as_=["Asset", "Value"]
+    ).mark_line().encode(
         x="date:T",
-        opacity=alt.condition(hover, alt.value(0.5), alt.value(0))
+        y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
+        color=alt.Color("Asset:N", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(orient="bottom")),
+        strokeWidth=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1.5)),
+        opacity=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.6))
+    )
+
+    # 3. The Vertical Rule (Cursor)
+    # This rule is drawn based on the Wide Data directly.
+    # It allows us to define ONE tooltip containing multiple columns.
+    
+    # Dynamic Tooltip List: Date + Portfolio + Assets
+    tooltip_list = [alt.Tooltip("date", title="Date", format="%d/%m/%Y")]
+    tooltip_list.append(alt.Tooltip("Portfolio", title="Portfolio", format=".2f"))
+    for t in prices_df.columns:
+        tooltip_list.append(alt.Tooltip(t, title=t, format=".2f"))
+
+    rule = alt.Chart(df_wide).mark_rule(color="gray").encode(
+        x="date:T",
+        opacity=alt.condition(hover, alt.value(0.5), alt.value(0)),
+        tooltip=tooltip_list
     ).add_params(hover)
 
-    st.altair_chart((lines + rule).properties(height=450).interactive(), use_container_width=True)
-    st.caption("Hover over a specific line to see its detailed value. The vertical line helps align dates.")
+    # Combine
+    chart = (lines + rule).properties(height=450)
+
+    st.altair_chart(chart, use_container_width=True)
 
     # ==========================================
     # 4. INDIVIDUAL ASSET METRICS (Table)
@@ -508,7 +520,6 @@ def portfolio_page():
     
     asset_metrics_list = []
     
-    # Calculate for each asset
     for ticker in prices_df.columns:
         m = compute_metrics(prices_df[ticker])
         row = {
@@ -520,10 +531,8 @@ def portfolio_page():
         }
         asset_metrics_list.append(row)
     
-    # Create DataFrame
     df_metrics_table = pd.DataFrame(asset_metrics_list)
     
-    # Display as a clean interactive table
     st.dataframe(
         df_metrics_table,
         use_container_width=True,

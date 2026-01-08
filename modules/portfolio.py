@@ -202,7 +202,6 @@ TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 # =========================
 
 def _normalize_weights(w: dict) -> dict:
-    """Keep only non-negative numbers, normalize to sum to 1."""
     ww = {}
     for k, v in w.items():
         try:
@@ -287,7 +286,7 @@ def portfolio_page():
     st.autorefresh = st_autorefresh(interval=300_000, key="auto_refresh_port")
 
     # ==========================================
-    # 1. CONTROLS
+    # 1. CONTROLS (Improved State Management)
     # ==========================================
     with st.container(border=True):
         st.subheader("Controls")
@@ -295,31 +294,38 @@ def portfolio_page():
         c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
         
         with c1:
-            url_tickers_str = st.query_params.get("tickers", "BZ=F,GC=F,HG=F")
-            url_tickers = [t.strip() for t in url_tickers_str.split(",") if t.strip()]
-            
-            default_options = []
-            for t in url_tickers:
-                if t in TICKER_TO_LABEL:
-                    default_options.append(TICKER_TO_LABEL[t])
-            
+            # CORRECTION: Initialisation unique depuis l'URL
+            if "port_tickers_init" not in st.session_state:
+                url_tickers_str = st.query_params.get("tickers", "BZ=F,GC=F,HG=F")
+                url_tickers = [t.strip() for t in url_tickers_str.split(",") if t.strip()]
+                
+                default_labels = []
+                for t in url_tickers:
+                    if t in TICKER_TO_LABEL:
+                        default_labels.append(TICKER_TO_LABEL[t])
+                
+                st.session_state.port_selected_labels = default_labels
+                st.session_state.port_tickers_init = True
+
             def clean_label(label):
                 if " | " in label: return label.split(" | ", 1)[1]
                 return label
 
+            # Widget lié directement au Session State
             selected_labels = st.multiselect(
                 "Select Assets (3 to 8)",
                 options=FLAT_ASSETS.keys(),
-                default=default_options,
+                key="port_selected_labels", # Key binds to session_state
                 max_selections=8,
                 format_func=clean_label
             )
             
+            # Mise à jour URL après sélection
             final_tickers = [FLAT_ASSETS[l] for l in selected_labels]
-            final_tickers = list(dict.fromkeys(final_tickers)) # Deduplicate
+            final_tickers = list(dict.fromkeys(final_tickers)) 
             
             new_url_str = ",".join(final_tickers)
-            if new_url_str != url_tickers_str:
+            if new_url_str != st.query_params.get("tickers"):
                 st.query_params["tickers"] = new_url_str
 
         with c2:
@@ -377,24 +383,13 @@ def portfolio_page():
     port_equity = simulate_portfolio(prices_df, weights, rebal_freq, initial_capital)
     port_metrics = compute_metrics(port_equity)
 
-    # --- Calculation of Diversification Ratio ---
-    # DR = (Weighted Average of Asset Vols) / (Portfolio Vol)
+    # Div Ratio
     asset_rets = prices_df.pct_change().dropna()
     asset_vols = asset_rets.std() * np.sqrt(252)
-    
-    # Get normalized target weights used
     w_target = _normalize_weights({t: weights.get(t, 0.0) for t in final_tickers})
-    
-    weighted_avg_vol = 0.0
-    for t, w in w_target.items():
-        if t in asset_vols:
-            weighted_avg_vol += w * asset_vols[t]
-            
+    weighted_avg_vol = sum([w * asset_vols[t] for t, w in w_target.items() if t in asset_vols])
     port_vol = port_metrics.get('annual_vol', 0)
-    if port_vol > 0:
-        div_ratio = weighted_avg_vol / port_vol
-    else:
-        div_ratio = 1.0
+    div_ratio = weighted_avg_vol / port_vol if port_vol > 0 else 1.0
 
     # ==========================================
     # 2. OVERVIEW & METRICS
@@ -410,7 +405,6 @@ def portfolio_page():
     with c_val:
         st.metric("Total Value", f"${curr_val:,.2f}", f"{total_ret:+.2%}")
         st.caption(f"Initial: ${start_val:,.2f}")
-        # Bouton Refresh
         if st.button("Refresh Data", type="primary"):
             st.rerun()
     
@@ -423,33 +417,42 @@ def portfolio_page():
         with m5: metric_card("Div. Ratio", f"{div_ratio:.2f}", "Diversification Ratio (>1 is better)")
 
     # ==========================================
-    # 3. PERFORMANCE CHART
+    # 3. PERFORMANCE CHART (Interactive Vertical Cursor)
     # ==========================================
     st.divider()
     st.subheader("Performance Analysis")
 
-    # Chart 1: Portfolio Value (Blue)
+    # Chart 1: Portfolio Value
     df_chart = port_equity.to_frame("Portfolio Value").reset_index()
     date_col = df_chart.columns[0]
     df_chart = df_chart.rename(columns={date_col: "date"})
     
-    base = alt.Chart(df_chart).encode(
-        x=alt.X("date:T", axis=alt.Axis(format="%d/%m/%Y", title=None, grid=True, gridOpacity=0.3))
+    base_p = alt.Chart(df_chart).encode(x=alt.X("date:T", axis=alt.Axis(format="%d/%m/%Y", title=None, grid=True, gridOpacity=0.3)))
+    
+    # Selection for tooltip
+    hover_p = alt.selection_point(fields=["date"], nearest=True, on="mouseover", empty="none", clear="mouseout")
+    
+    line_p = base_p.mark_line(stroke="#4A90E2", strokeWidth=2).encode(
+        y=alt.Y("Portfolio Value:Q", axis=alt.Axis(format="$s", title="Value ($)"), scale=alt.Scale(zero=False))
     )
     
-    line = base.mark_line(stroke="#4A90E2", strokeWidth=2).encode(
-        y=alt.Y("Portfolio Value:Q", axis=alt.Axis(format="$s", title="Value ($)"), scale=alt.Scale(zero=False)),
+    points_p = base_p.mark_circle().encode(
+        y=alt.Y("Portfolio Value:Q"),
+        opacity=alt.condition(hover_p, alt.value(1), alt.value(0)),
         tooltip=[alt.Tooltip("date:T", format="%d/%m/%Y"), alt.Tooltip("Portfolio Value:Q", format="$,.2f")]
-    )
-    
-    st.altair_chart(line.properties(height=400), use_container_width=True)
+    ).add_params(hover_p)
 
-    # Chart 2: Normalized Comparison
+    rule_p = base_p.mark_rule(color="gray").encode(
+        opacity=alt.condition(hover_p, alt.value(0.5), alt.value(0))
+    ).transform_filter(hover_p)
+
+    st.altair_chart((line_p + points_p + rule_p).properties(height=400), use_container_width=True)
+
+    # Chart 2: Relative Performance (Multi-Asset Interactive)
     st.subheader("Relative Performance (Base 100)")
     
     norm_assets = (prices_df / prices_df.iloc[0]) * 100
     norm_port = (port_equity / port_equity.iloc[0]) * 100
-    
     df_norm = norm_assets.copy()
     df_norm["Portfolio"] = norm_port
     
@@ -460,28 +463,38 @@ def portfolio_page():
     domain = ["Portfolio"] + list(prices_df.columns)
     range_ = ["#FF4B4B"] + ["#4A90E2", "#50C878", "#FFD700", "#9370DB", "#FF8C00", "#00CED1", "#C71585", "#808080"][:len(prices_df.columns)]
     
-    stroke_width = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1))
-    opacity = alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.6))
-
-    c_norm = alt.Chart(df_melt).mark_line().encode(
-        x=alt.X("date:T", axis=alt.Axis(title=None)),
+    base_n = alt.Chart(df_melt).encode(x=alt.X("date:T", axis=alt.Axis(title=None)))
+    
+    # Interactive Selection
+    hover_n = alt.selection_point(fields=["date"], nearest=True, on="mouseover", empty="none", clear="mouseout")
+    
+    lines_n = base_n.mark_line().encode(
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
         color=alt.Color("Asset:N", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(orient="bottom")),
-        strokeWidth=stroke_width,
-        opacity=opacity,
-        detail="Asset",
-        tooltip=["date:T", "Asset:N", alt.Tooltip("Value:Q", format=".1f")]
-    ).properties(height=400)
+        strokeWidth=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1)),
+        opacity=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.6)),
+        detail="Asset"
+    )
 
-    st.altair_chart(c_norm, use_container_width=True)
+    points_n = base_n.mark_circle().encode(
+        y=alt.Y("Value:Q"),
+        color=alt.Color("Asset:N", scale=alt.Scale(domain=domain, range=range_)),
+        opacity=alt.condition(hover_n, alt.value(1), alt.value(0)),
+        tooltip=["date:T", "Asset:N", alt.Tooltip("Value:Q", format=".1f")]
+    ).add_params(hover_n)
+
+    rule_n = base_n.mark_rule(color="gray").encode(
+        opacity=alt.condition(hover_n, alt.value(0.5), alt.value(0))
+    ).transform_filter(hover_n)
+
+    st.altair_chart((lines_n + points_n + rule_n).properties(height=400), use_container_width=True)
 
     # ==========================================
-    # 4. INDIVIDUAL ASSET PERFORMANCE (BAR CHART)
+    # 4. INDIVIDUAL ASSET PERFORMANCE
     # ==========================================
     st.divider()
     st.subheader("Individual Asset Performance")
     
-    # Calculate total return for each asset over the period
     total_returns = (prices_df.iloc[-1] - prices_df.iloc[0]) / prices_df.iloc[0]
     df_perf = total_returns.to_frame("Total Return").reset_index().rename(columns={"index": "Asset"})
     

@@ -18,11 +18,41 @@ from services.data_loader import load_price_history
 # =========================
 
 ASSET_DB = {
+    "GLOBAL & REGIONAL (ETFs/Indices)": {
+        "MSCI World (iShares)": "URTH",
+        "MSCI ACWI - All Country (iShares)": "ACWI",
+        "MSCI Emerging Markets (iShares)": "EEM",
+        "Vanguard Total World Stock": "VT",
+        "Euro Stoxx 600": "^STOXX",
+        "Vanguard FTSE Europe": "VGK",
+        "iShares Asia 50": "AIA"
+    },
+    "US SECTORS (SPDR ETFs)": {
+        "Technology (XLK)": "XLK",
+        "Financials (XLF)": "XLF",
+        "Healthcare (XLV)": "XLV",
+        "Energy (XLE)": "XLE",
+        "Semiconductors (SOXX)": "SOXX",
+        "Consumer Discretionary (XLY)": "XLY",
+        "Consumer Staples (XLP)": "XLP",
+        "Utilities (XLU)": "XLU",
+        "Industrials (XLI)": "XLI"
+    },
+    "REAL ESTATE (REITs)": {
+        "Vanguard Real Estate (US)": "VNQ",
+        "iShares Global REIT": "REET",
+        "Simon Property Group": "SPG",
+        "Prologis": "PLD",
+        "Realty Income": "O"
+    },
     "BONDS & RATES": {
         "German 10Y Bund Yield": "^TNX",
         "US Treasury Yield 10 Years": "^TNX",
         "US Treasury Yield 30 Years": "^TYX",
-        "US Treasury Yield 5 Years": "^FVX"
+        "US Treasury Yield 5 Years": "^FVX",
+        "iShares 20+ Year Treasury Bond (TLT)": "TLT",
+        "iShares 7-10 Year Treasury Bond (IEF)": "IEF",
+        "iShares Core US Aggregate Bond (AGG)": "AGG"
     },
     "COMMODITIES - AGRI": {
         "Cocoa": "CC=F",
@@ -46,7 +76,8 @@ ASSET_DB = {
         "Gasoline (RBOB)": "RB=F",
         "Heating Oil": "HO=F",
         "Natural Gas": "NG=F",
-        "WTI Crude Oil": "CL=F"
+        "WTI Crude Oil": "CL=F",
+        "Uranium (URA ETF)": "URA"
     },
     "COMMODITIES - METALS": {
         "Aluminum": "ALI=F",
@@ -54,7 +85,8 @@ ASSET_DB = {
         "Gold": "GC=F",
         "Palladium": "PA=F",
         "Platinum": "PL=F",
-        "Silver": "SI=F"
+        "Silver": "SI=F",
+        "Lithium (LIT ETF)": "LIT"
     },
     "CRYPTO": {
         "Avalanche": "AVAX-USD",
@@ -195,7 +227,6 @@ for category in sorted(ASSET_DB.keys()):
         FLAT_ASSETS[label] = items[name]
 
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
-
 
 # =========================
 # State Persistence Logic
@@ -386,8 +417,7 @@ def portfolio_page():
                 cols = st.columns(len(final_tickers))
                 for i, t in enumerate(final_tickers):
                     with cols[i]:
-                        # Keys MUST be dynamic based on ticker to avoid conflicts, but specific enough to persist if possible
-                        # Simple persistence for weights is hard if list changes, we use defaults if key missing
+                        # Keys MUST be dynamic based on ticker to avoid conflicts
                         weights[t] = st.number_input(f"{t}", value=1.0, step=0.1, key=f"w_{t}")
         else:
             weights = {t: 1.0 for t in final_tickers}
@@ -477,7 +507,6 @@ def portfolio_page():
     )
 
     # 2. Lines (Transform Fold to convert Wide -> Long internally for drawing lines)
-    # We use transform_fold so we can draw multiple lines from the wide dataframe
     fold_cols = ["Portfolio"] + list(prices_df.columns)
     
     lines = alt.Chart(df_wide).transform_fold(
@@ -492,9 +521,6 @@ def portfolio_page():
     )
 
     # 3. The Vertical Rule (Cursor)
-    # This rule is drawn based on the Wide Data directly.
-    # It allows us to define ONE tooltip containing multiple columns.
-    
     # Dynamic Tooltip List: Date + Portfolio + Assets
     tooltip_list = [alt.Tooltip("date", title="Date", format="%d/%m/%Y")]
     tooltip_list.append(alt.Tooltip("Portfolio", title="Portfolio", format=".2f"))
@@ -586,3 +612,4 @@ def portfolio_page():
         ).properties(height=300)
         
         st.altair_chart(pie, use_container_width=True)
+

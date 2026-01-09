@@ -1,6 +1,7 @@
-streamlit
-pandas
-numpy
-yfinance
-altair
-streamlit-autorefresh
+streamlit>=1.30.0
+pandas>=2.0.0
+numpy>=1.24.0
+yfinance>=0.2.30
+altair>=5.0.0
+scikit-learn>=1.3.0
+streamlit-autorefresh>=1.0.0

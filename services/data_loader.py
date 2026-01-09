@@ -3,61 +3,79 @@ import pandas as pd
 from datetime import datetime, timezone
 
 
-def load_price_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
-    """
-    Download historical prices from Yahoo Finance via yfinance.
-
-    Returns a DataFrame with:
-      - index = DatetimeIndex
-      - column 'price' = Close price (float)
-    """
-    df = yf.download(ticker, period=period, interval=interval, progress=False)
-
-    if df is None or df.empty:
-        return pd.DataFrame()
-
-    # yfinance returns columns like 'Open','High','Low','Close','Adj Close','Volume'
-    if "Close" not in df.columns:
-        return pd.DataFrame()
-
-    out = pd.DataFrame(index=df.index)
-    out["price"] = df["Close"].astype(float)
-
-    # Clean timezone (Streamlit likes naive timestamps)
-    try:
-        out.index = pd.to_datetime(out.index).tz_localize(None)
-    except Exception:
-        pass
-
-    return out
-
-
 def load_live_quote(ticker: str) -> dict:
     """
-    Returns a live-ish quote (last price) + timestamp.
-    yfinance is dynamic (prices update intraday).
+    Returns a live-ish quote (last price), previous close, and timestamp.
     """
     t = yf.Ticker(ticker)
-
     last = None
+    prev = None
 
-    # Try fast_info first (often quickest)
+    # 1) Try fast_info (quickest way to get last + prev_close)
     try:
-        fi = getattr(t, "fast_info", {})
+        fi = getattr(t, "fast_info", {}) or {}
         last = fi.get("last_price", None)
+        prev = fi.get("previous_close", None)
+
+        if last is not None: 
+            last = float(last)
+        if prev is not None: 
+            prev = float(prev)
     except Exception:
         last = None
+        prev = None
 
-    # Fallback: 1-minute data (more reliable)
+    # 2) Try intraday 1m (fallback for last price)
     if last is None:
         try:
             df = t.history(period="1d", interval="1m")
-            if df is not None and not df.empty and "Close" in df.columns:
-                last = float(df["Close"].iloc[-1])
+            if isinstance(df, pd.DataFrame) and not df.empty and "Close" in df.columns:
+                last = float(df["Close"].dropna().iloc[-1])
         except Exception:
-            last = None
+            pass
+
+    # 3) Fallback / Ensure we have Prev Close: fetch daily history
+    if last is None or prev is None:
+        try:
+            df_daily = t.history(period="5d", interval="1d")
+            if isinstance(df_daily, pd.DataFrame) and not df_daily.empty and "Close" in df_daily.columns:
+                closes = df_daily["Close"].dropna()
+                # Get last price if missing
+                if len(closes) >= 1 and last is None:
+                    last = float(closes.iloc[-1])
+                # Get previous close
+                if len(closes) >= 2 and prev is None:
+                    prev = float(closes.iloc[-2])
+                elif len(closes) >= 1 and prev is None:
+                    prev = float(closes.iloc[-1]) 
+        except Exception:
+            pass
 
     return {
         "last_price": last,
+        "prev_close": prev,
         "asof_utc": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
     }
+
+
+def load_price_history(ticker: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+    """
+    Returns historical prices with a 'price' column (Close).
+    """
+    try:
+        df = yf.download(ticker, period=period, interval=interval, progress=False)
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        # Handle multi-index columns sometimes returned by yfinance
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        if "Close" not in df.columns:
+            return pd.DataFrame()
+
+        out = pd.DataFrame({"price": df["Close"]})
+        out.index = pd.to_datetime(out.index)
+        return out.dropna()
+    except Exception:
+        return pd.DataFrame()

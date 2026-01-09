@@ -583,4 +583,65 @@ def single_asset_page():
             tooltip=[
                 alt.Tooltip("date:T", title="Date", format="%d %B %Y"),
                 alt.Tooltip("Asset Price ($):Q", format="$.2f"),
-                alt.Tooltip("Strategy (Base 100):Q
+                alt.Tooltip("Strategy (Base 100):Q", format=".2f")
+            ]
+        ).add_params(hover)
+
+        chart_perf = alt.layer(line_asset, line_strat, cursor).resolve_scale(y='independent').properties(height=450)
+        st.altair_chart(chart_perf, use_container_width=True)
+        st.caption("Blue: Asset Price (Left Scale) | Red: Strategy rebased to 100 (Right Scale)")
+        
+        st.subheader("Strategy Metrics")
+        display_metrics_grid(metrics_strat)
+
+    # ==========================================
+    # 4. FORECAST
+    # ==========================================
+    st.divider()
+    st.header("Forecast Analysis")
+
+    fc_df, fc_metrics = train_forecast_model(prices, horizon_fc, log_fc)
+
+    if not fc_df.empty:
+        hist_data = prices.iloc[-252:].to_frame("price").reset_index() 
+        hist_data.columns = ["date", "price"]
+        fc_data = fc_df.reset_index().rename(columns={"index": "date"})
+        
+        x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date"))
+        y_axis = alt.Y("price:Q", scale=alt.Scale(zero=False), axis=alt.Axis(format="$f"))
+
+        hover_fc = alt.selection_point(fields=["date"], nearest=True, on="mouseover", empty="none", clear="mouseout")
+
+        c_hist = alt.Chart(hist_data).mark_line().encode(x=x_axis, y=y_axis, color=alt.value("#4A90E2"))
+        c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(x=x_axis, y=alt.Y("forecast:Q", scale=alt.Scale(zero=False)), color=alt.value("#FF4B4B"))
+        c_band = alt.Chart(fc_data).mark_area(opacity=0.2).encode(x=x_axis, y=alt.Y("lower:Q"), y2="upper:Q", color=alt.value("#FF4B4B"))
+
+        df_combo = pd.concat([
+            hist_data.rename(columns={"price": "Price"}),
+            fc_data.rename(columns={"forecast": "Forecast", "lower": "Lower", "upper": "Upper"})
+        ], ignore_index=True)
+
+        rule_fc = alt.Chart(df_combo).mark_rule(color="gray", strokeWidth=1.5).encode(
+            x="date:T",
+            opacity=alt.condition(hover_fc, alt.value(0.6), alt.value(0)),
+            tooltip=[
+                alt.Tooltip("date:T", format="%d %B %Y"),
+                alt.Tooltip("Price:Q", format="$.2f"),
+                alt.Tooltip("Forecast:Q", format="$.2f"),
+            ]
+        ).add_params(hover_fc)
+
+        chart = alt.layer(c_hist, c_band, c_fc, rule_fc).properties(height=500).configure_axis(grid=True, gridOpacity=0.3)
+        st.altair_chart(chart, use_container_width=True)
+
+        st.subheader("Model Performance")
+        fp1, fp2, fp3, fp4, fp5 = st.columns(5)
+        with fp1: st.metric("MAE", f"${fc_metrics.get('mae', 0):.2f}")
+        with fp2: st.metric("MAPE", f"{fc_metrics.get('mape', 0):.2%}")
+        with fp3: st.metric("RMSE", f"${fc_metrics.get('rmse', 0):.2f}")
+        with fp4: st.metric("R² Score", f"{fc_metrics.get('r2', 0):.3f}")
+        with fp5: st.metric("Model", fc_metrics.get('model', 'N/A'))
+            
+        st.markdown(f"**Prediction (+{horizon_fc}d):** ${fc_df['forecast'].iloc[-1]:.2f}")
+    else:
+        st.warning("Not enough data to train model.")

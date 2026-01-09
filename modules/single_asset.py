@@ -239,6 +239,7 @@ TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 def backtest_buy_hold(prices: pd.Series) -> pd.Series:
     """Buy & Hold: invested all the time."""
     prices = prices.dropna()
+    if prices.empty: return pd.Series(dtype=float)
     rets = prices.pct_change().dropna()
     equity = (1 + rets).cumprod()
     equity.name = "Buy & Hold"
@@ -251,13 +252,15 @@ def backtest_momentum(prices: pd.Series, lookback: int = 50) -> pd.Series:
     Logic: Buy if Price > SMA(lookback).
     """
     prices = prices.dropna()
+    if prices.empty: return pd.Series(dtype=float)
+    
     rets = prices.pct_change().dropna()
-
     sma = prices.rolling(lookback).mean()
     signal = (prices > sma).astype(int)
     
+    # Avoid look-ahead bias
     position = signal.shift(1).reindex(rets.index).fillna(0)
-
+    
     strat_rets = position * rets
     equity = (1 + strat_rets).cumprod()
     equity.name = f"Momentum_{lookback}d"
@@ -267,8 +270,9 @@ def backtest_momentum(prices: pd.Series, lookback: int = 50) -> pd.Series:
 def backtest_breakout(prices: pd.Series, lookback: int = 50) -> pd.Series:
     """N-day breakout."""
     prices = prices.dropna()
-    rets = prices.pct_change().dropna()
+    if prices.empty: return pd.Series(dtype=float)
 
+    rets = prices.pct_change().dropna()
     rolling_high = prices.shift(1).rolling(lookback, min_periods=lookback).max()
     signal = (prices >= rolling_high).astype(int)
 
@@ -285,10 +289,13 @@ def backtest_breakout(prices: pd.Series, lookback: int = 50) -> pd.Series:
 # =========================
 
 def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
-    if series is None: return {}
+    if series is None or series.empty: return {}
     if isinstance(series, pd.DataFrame): series = series.iloc[:, 0]
 
     series = series.dropna()
+    # Si la série est trop courte ou constante (pas de returns), renvoyer vide
+    if len(series) < 2: return {}
+
     rets = series.pct_change().dropna()
     if rets.empty: return {}
 
@@ -299,6 +306,8 @@ def compute_metrics(series: pd.Series | pd.DataFrame) -> dict:
     sharpe = annual_return / annual_vol if annual_vol != 0 else 0.0
 
     cum = (1 + rets).cumprod()
+    if cum.empty: return {}
+    
     max_dd = float((cum / cum.cummax() - 1).min())
     calmar = annual_return / abs(max_dd) if max_dd != 0 else 0.0
     downside = rets[rets < 0].std() * np.sqrt(252)
@@ -318,104 +327,94 @@ def metric_card(label: str, value_str: str, help_text: str = None):
 
 
 def display_metrics_grid(metrics: dict):
-    if not metrics: return
+    # CRITICAL FIX: Handle empty dict gracefully
+    if not metrics:
+        st.warning("Insufficient data to calculate metrics for this strategy/parameter combination.")
+        return
+
     c1, c2, c3, c4 = st.columns(4)
-    with c1: metric_card("Annual Return", f"{metrics['annual_return']:.2%}")
-    with c2: metric_card("Volatility", f"{metrics['annual_vol']:.2%}")
-    with c3: metric_card("Sharpe Ratio", f"{metrics['sharpe']:.2f}")
-    with c4: metric_card("Max Drawdown", f"{metrics['max_drawdown']:.2%}", "Maximum loss from peak to trough")
+    # Use .get() to be safe, though compute_metrics should populate all keys if it returns something
+    with c1: metric_card("Annual Return", f"{metrics.get('annual_return', 0):.2%}")
+    with c2: metric_card("Volatility", f"{metrics.get('annual_vol', 0):.2%}")
+    with c3: metric_card("Sharpe Ratio", f"{metrics.get('sharpe', 0):.2f}")
+    with c4: metric_card("Max Drawdown", f"{metrics.get('max_drawdown', 0):.2%}", "Maximum loss from peak to trough")
 
     c5, c6, c7, _ = st.columns(4)
-    with c5: metric_card("Calmar", f"{metrics['calmar']:.2f}")
-    with c6: metric_card("Sortino", f"{metrics['sortino']:.2f}")
-    with c7: metric_card("Daily Mean", f"{metrics['mean_daily']:.3%}")
+    with c5: metric_card("Calmar", f"{metrics.get('calmar', 0):.2f}")
+    with c6: metric_card("Sortino", f"{metrics.get('sortino', 0):.2f}")
+    with c7: metric_card("Daily Mean", f"{metrics.get('mean_daily', 0):.3%}")
 
 
 # =========================
-# ML Forecast Logic (Improved: Weighted Regression)
+# ML Forecast Logic
 # =========================
 
 def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = True):
-    """
-    Trains a Weighted Linear Regression model on historical time steps.
-    Weights are exponential to prioritize recent data over old history.
-    """
     s = prices.dropna()
     if len(s) < 30: return pd.DataFrame(), {}
 
-    # Feature Engineering: X = Integer Time
     y = np.log(s.values) if use_log else s.values
     X = np.arange(len(y)).reshape(-1, 1)
 
-    # --- WEIGHTING LOGIC ---
-    # Create exponential weights: recent points get significantly higher weight.
-    # geomspace from 0.01 to 1.0 ensures the last point is 100x more important than the first.
     weights = np.geomspace(0.01, 1.0, len(y))
 
-    # Train Model (Weighted Linear Regression)
-    model = LinearRegression()
-    model.fit(X, y, sample_weight=weights)
-    
-    # Calculate In-Sample Performance
-    y_pred_hist = model.predict(X)
-    
-    # Compute Metrics on original scale for readability
-    if use_log:
-        y_true = s.values
-        y_pred = np.exp(y_pred_hist)
-    else:
-        y_true = s.values
-        y_pred = y_pred_hist
+    try:
+        model = LinearRegression()
+        model.fit(X, y, sample_weight=weights)
+        
+        y_pred_hist = model.predict(X)
+        
+        if use_log:
+            y_true = s.values
+            y_pred = np.exp(y_pred_hist)
+        else:
+            y_true = s.values
+            y_pred = y_pred_hist
 
-    r2 = r2_score(y_true, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mae = mean_absolute_error(y_true, y_pred)
-    mape = mean_absolute_percentage_error(y_true, y_pred)
+        r2 = r2_score(y_true, y_pred)
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        mae = mean_absolute_error(y_true, y_pred)
+        mape = mean_absolute_percentage_error(y_true, y_pred)
 
-    # Predict Future
-    last_idx = X[-1][0]
-    X_future = np.arange(last_idx + 1, last_idx + 1 + horizon).reshape(-1, 1)
-    y_future_pred = model.predict(X_future)
+        last_idx = X[-1][0]
+        X_future = np.arange(last_idx + 1, last_idx + 1 + horizon).reshape(-1, 1)
+        y_future_pred = model.predict(X_future)
 
-    # Confidence Interval
-    # We estimate residual std dev based on recent errors to avoid overconfidence from the past
-    residuals = y - y_pred_hist
-    # Weighted std of residuals? Simple std is safer/more conservative usually.
-    std_resid = np.std(residuals[-30:]) # Use last 30 residuals for uncertainty to reflect recent volatility
-    z_score = 1.96 
-    
-    lower_log = y_future_pred - z_score * std_resid
-    upper_log = y_future_pred + z_score * std_resid
+        residuals = y - y_pred_hist
+        std_resid = np.std(residuals[-30:]) 
+        z_score = 1.96 
+        
+        lower_log = y_future_pred - z_score * std_resid
+        upper_log = y_future_pred + z_score * std_resid
 
-    # Create Date Index for Future
-    freq = pd.infer_freq(s.index) or "D"
-    future_dates = pd.date_range(start=s.index[-1], periods=horizon+1, freq=freq)[1:]
+        freq = pd.infer_freq(s.index) or "D"
+        future_dates = pd.date_range(start=s.index[-1], periods=horizon+1, freq=freq)[1:]
 
-    # Transform back if Log
-    if use_log:
-        forecast_vals = np.exp(y_future_pred)
-        lower_vals = np.exp(lower_log)
-        upper_vals = np.exp(upper_log)
-    else:
-        forecast_vals = y_future_pred
-        lower_vals = lower_log
-        upper_vals = upper_log
+        if use_log:
+            forecast_vals = np.exp(y_future_pred)
+            lower_vals = np.exp(lower_log)
+            upper_vals = np.exp(upper_log)
+        else:
+            forecast_vals = y_future_pred
+            lower_vals = lower_log
+            upper_vals = upper_log
 
-    df_fc = pd.DataFrame({
-        "forecast": forecast_vals,
-        "lower": lower_vals,
-        "upper": upper_vals
-    }, index=future_dates)
+        df_fc = pd.DataFrame({
+            "forecast": forecast_vals,
+            "lower": lower_vals,
+            "upper": upper_vals
+        }, index=future_dates)
 
-    metrics = {
-        "r2": r2,
-        "rmse": rmse,
-        "mae": mae,
-        "mape": mape,
-        "model": "Weighted Linear Regression (Trend Following)"
-    }
+        metrics = {
+            "r2": r2, "rmse": rmse, "mae": mae, "mape": mape,
+            "model": "Weighted Linear Regression (Trend Following)"
+        }
 
-    return df_fc, metrics
+        return df_fc, metrics
+
+    except Exception as e:
+        print(f"ML Error: {e}")
+        return pd.DataFrame(), {}
 
 
 # =========================
@@ -426,70 +425,50 @@ def single_asset_page():
     st.title("Single Asset Analysis")
     st.autorefresh = st_autorefresh(interval=300_000, key="auto_refresh_5min")
 
-    # ==========================================
-    # 1. CONTROLS
-    # ==========================================
     with st.container(border=True):
         st.subheader("Controls")
-        
         c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
         with c1:
-            # 1. Retrieve ticker from URL
             url_ticker = st.query_params.get("Asset", "BZ=F")
-            
-            # Determine if it's a Known Asset or Custom
             if url_ticker in TICKER_TO_LABEL:
-                default_index = list(FLAT_ASSETS.values()).index(url_ticker) + 1 # +1 for "Custom" option
+                default_index = list(FLAT_ASSETS.values()).index(url_ticker) + 1
                 default_custom = ""
             else:
-                default_index = 0 # "Custom Ticker..."
+                default_index = 0
                 default_custom = url_ticker
 
-            # Dropdown List
             options = ["Custom Ticker..."] + list(FLAT_ASSETS.keys())
             selected_label = st.selectbox("Select Asset", options, index=default_index)
 
-            # Logic: Dropdown vs Custom Input
             if selected_label == "Custom Ticker...":
                 ticker = st.text_input("Enter Symbol (Yahoo Finance)", value=default_custom)
             else:
                 ticker = FLAT_ASSETS[selected_label]
             
-            # Sync to URL
             if ticker and ticker != st.query_params.get("Asset"):
                 st.query_params["Asset"] = ticker
             
         with c2:
-            period = st.selectbox(
-                "Lookback", 
-                ["5d", "10d", "15d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max"], 
-                index=6
-            )
-        
+            period = st.selectbox("Lookback", ["5d", "10d", "15d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max"], index=6)
         with c3:
             interval_map = {"Daily": "1d", "Weekly": "1wk", "Monthly": "1mo"}
             interval_label = st.selectbox("Frequency", list(interval_map.keys()), index=0)
             interval = interval_map[interval_label]
 
         with c4:
-            # MODIFIED: Renamed option
             strategy_name = st.selectbox("Backtesting Strategy", ["Buy & Hold", "Momentum", "Breakout"], index=0)
 
         st.divider()
-        
-        # MODIFIED: Strategy Params Logic
         ac1, ac2 = st.columns(2)
         with ac1:
             st.markdown("**Strategy Settings**")
-            
             if "Momentum" in strategy_name:
-                # NEW: Single lookback parameter for Momentum
                 lookback = st.slider("Momentum Lookback", 5, 200, 50, help="Buy if Price > SMA(Lookback)")
             elif "Breakout" in strategy_name:
                 lookback = st.slider("Breakout Lookback", 10, 200, 50, help="Buy if Price > High(Lookback)")
             else:
                 st.caption("Standard Buy & Hold strategy (no parameters).")
-                lookback = 50 # Default safe value
+                lookback = 50 
         
         with ac2:
             st.markdown("**Forecast Settings**")
@@ -500,21 +479,26 @@ def single_asset_page():
     # Load Data
     try:
         data = load_price_history(ticker, period=period, interval=interval)
+        if data.empty:
+            st.warning("No data found. Check the ticker or your internet connection.")
+            return
+
         prices = data["price"].dropna()
         if prices.index.tz is not None:
             prices.index = prices.index.tz_localize(None)
-    except:
-        st.error(f"Error loading data for ticker: {ticker}"); return
+    except Exception as e:
+        st.error(f"Error loading data for ticker: {ticker} ({e})")
+        return
 
-    if prices.empty: st.warning("No data available."); return
+    if prices.empty: 
+        st.warning("No data available.")
+        return
 
     # Strategies Execution
     equity_bh = backtest_buy_hold(prices)
-    # MODIFIED: Call new function
     equity_mom = backtest_momentum(prices, lookback)
     equity_brk = backtest_breakout(prices, lookback)
 
-    # Logic Selection
     if "Momentum" in strategy_name: 
         equity_sel = equity_mom
         strat_label = f"Momentum ({lookback}d)"
@@ -529,7 +513,7 @@ def single_asset_page():
     metrics_strat = compute_metrics(equity_sel)
 
     # ==========================================
-    # 2. ASSET OVERVIEW
+    # 2. ASSET OVERVIEW (FIXED KEYERROR)
     # ==========================================
     st.divider()
     st.header("Asset Overview")
@@ -551,91 +535,34 @@ def single_asset_page():
             st.rerun()
             
     with col_m:
-        m1, m2, m3, m4 = st.columns(4)
-        with m1: metric_card("Return (Ann.)", f"{metrics_asset['annual_return']:.2%}")
-        with m2: metric_card("Volatility", f"{metrics_asset['annual_vol']:.2%}")
-        with m3: metric_card("Sharpe", f"{metrics_asset['sharpe']:.2f}")
-        with m4: metric_card("Max Drawdown", f"{metrics_asset['max_drawdown']:.2%}", "Max loss")
+        # SAFE DISPLAY: Check if metrics exist
+        if metrics_asset:
+            m1, m2, m3, m4 = st.columns(4)
+            with m1: metric_card("Return (Ann.)", f"{metrics_asset.get('annual_return', 0):.2%}")
+            with m2: metric_card("Volatility", f"{metrics_asset.get('annual_vol', 0):.2%}")
+            with m3: metric_card("Sharpe", f"{metrics_asset.get('sharpe', 0):.2f}")
+            with m4: metric_card("Max Drawdown", f"{metrics_asset.get('max_drawdown', 0):.2%}", "Max loss")
+        else:
+            st.warning("Not enough historical data to display asset metrics.")
 
     # ==========================================
-    # 3. PERFORMANCE (Chart: Optimized Interactive Cursor)
+    # 3. PERFORMANCE
     # ==========================================
     st.divider()
     st.subheader(f"Price & Strategy Performance ({strat_label})")
     
-    df_perf = pd.concat([prices, equity_sel * 100], axis=1).dropna()
-    df_perf.columns = ["Asset Price ($)", "Strategy (Base 100)"]
-    df_perf = df_perf.reset_index().rename(columns={df_perf.index.name or "index": "date"})
+    if equity_sel.empty:
+        st.warning(f"Strategy '{strat_label}' generated no trades (Flat line). Try increasing the Lookback Period or reducing the Strategy parameter.")
+    else:
+        df_perf = pd.concat([prices, equity_sel * 100], axis=1).dropna()
+        df_perf.columns = ["Asset Price ($)", "Strategy (Base 100)"]
+        df_perf = df_perf.reset_index().rename(columns={df_perf.index.name or "index": "date"})
 
-    # --- FLUID INTERACTIVITY LOGIC ---
-    base = alt.Chart(df_perf).encode(
-        x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
-    )
-
-    hover = alt.selection_point(
-        fields=["date"],
-        nearest=True,
-        on="mouseover",
-        empty="none",
-        clear="mouseout"
-    )
-
-    line_asset = base.mark_line(stroke="#4A90E2", interpolate="monotone").encode(
-        y=alt.Y(
-            "Asset Price ($):Q",
-            title="Asset Price ($)",
-            scale=alt.Scale(zero=False),
-            axis=alt.Axis(titleColor="#4A90E2", grid=True, gridOpacity=0.3)
+        base = alt.Chart(df_perf).encode(
+            x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
         )
-    )
 
-    line_strat = base.mark_line(stroke="#FF4B4B", interpolate="monotone").encode(
-        y=alt.Y(
-            "Strategy (Base 100):Q",
-            title="Strategy Performance (Base 100)",
-            scale=alt.Scale(zero=False),
-            axis=alt.Axis(titleColor="#FF4B4B", orient="right", grid=False)
-        )
-    )
-
-    cursor = base.mark_rule(color="gray", strokeWidth=1.5).encode(
-        opacity=alt.condition(hover, alt.value(0.6), alt.value(0)),
-        tooltip=[
-            alt.Tooltip("date:T", title="Date", format="%d %B %Y"),
-            alt.Tooltip("Asset Price ($):Q", title="Asset Price ($)", format="$.2f"),
-            alt.Tooltip("Strategy (Base 100):Q", title="Strategy (Base 100)", format=".2f")
-        ]
-    ).add_params(hover)
-
-    chart_perf = alt.layer(line_asset, line_strat, cursor).resolve_scale(
-        y='independent'
-    ).properties(height=450)
-
-    st.altair_chart(chart_perf, use_container_width=True)
-    
-    st.caption("Blue: Asset Price (Left Scale) | Red: Strategy rebased to 100 (Right Scale)")
-    
-    st.subheader("Strategy Metrics")
-    display_metrics_grid(metrics_strat)
-
-    # ==========================================
-    # 4. FORECAST (Updated: Metrics + Fluid Interaction)
-    # ==========================================
-    st.divider()
-    st.header("Forecast Analysis")
-
-    fc_df, fc_metrics = train_forecast_model(prices, horizon_fc, log_fc)
-
-    if not fc_df.empty:
-        hist_data = prices.iloc[-252:].to_frame("price").reset_index() 
-        hist_data.columns = ["date", "price"]
-        
-        fc_data = fc_df.reset_index().rename(columns={"index": "date"})
-        
-        x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
-        y_axis = alt.Y("price:Q", scale=alt.Scale(zero=False), axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
-
-        hover_fc = alt.selection_point(
+        hover = alt.selection_point(
             fields=["date"],
             nearest=True,
             on="mouseover",
@@ -643,63 +570,17 @@ def single_asset_page():
             clear="mouseout"
         )
 
-        c_hist = alt.Chart(hist_data).mark_line().encode(
-            x=x_axis, y=y_axis,
-            color=alt.value("#4A90E2"), stroke=alt.datum("Historic Price")
-        )
-        
-        c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(
-            x=x_axis, y=alt.Y("forecast:Q", scale=alt.Scale(zero=False)),
-            color=alt.value("#FF4B4B"), stroke=alt.datum("Prediction")
-        )
-        
-        c_band = alt.Chart(fc_data).mark_area(opacity=0.2).encode(
-            x=x_axis,
-            y=alt.Y("lower:Q", scale=alt.Scale(zero=False)),
-            y2="upper:Q",
-            color=alt.value("#FF4B4B"), fill=alt.datum("95% Confidence Interval")
+        line_asset = base.mark_line(stroke="#4A90E2", interpolate="monotone").encode(
+            y=alt.Y("Asset Price ($):Q", title="Asset Price ($)", scale=alt.Scale(zero=False), axis=alt.Axis(titleColor="#4A90E2"))
         )
 
-        # Combo for Unified Tooltip Rule
-        df_h_lite = hist_data.copy()
-        df_h_lite["Forecast"] = np.nan
-        df_h_lite["Lower"] = np.nan
-        df_h_lite["Upper"] = np.nan
-        df_h_lite = df_h_lite.rename(columns={"price": "Price"})
-        
-        df_f_lite = fc_data.copy()
-        df_f_lite["Price"] = np.nan
-        df_f_lite = df_f_lite.rename(columns={"forecast": "Forecast", "lower": "Lower", "upper": "Upper"})
-        
-        df_combo = pd.concat([df_h_lite, df_f_lite], ignore_index=True)
-        
-        rule_fc = alt.Chart(df_combo).mark_rule(color="gray", strokeWidth=1.5).encode(
-            x="date:T",
-            opacity=alt.condition(hover_fc, alt.value(0.6), alt.value(0)),
+        line_strat = base.mark_line(stroke="#FF4B4B", interpolate="monotone").encode(
+            y=alt.Y("Strategy (Base 100):Q", title="Strategy (Base 100)", scale=alt.Scale(zero=False), axis=alt.Axis(titleColor="#FF4B4B", orient="right"))
+        )
+
+        cursor = base.mark_rule(color="gray", strokeWidth=1.5).encode(
+            opacity=alt.condition(hover, alt.value(0.6), alt.value(0)),
             tooltip=[
                 alt.Tooltip("date:T", title="Date", format="%d %B %Y"),
-                alt.Tooltip("Price:Q", format="$.2f"),
-                alt.Tooltip("Forecast:Q", format="$.2f"),
-                alt.Tooltip("Lower:Q", format="$.2f"),
-                alt.Tooltip("Upper:Q", format="$.2f"),
-            ]
-        ).add_params(hover_fc)
-
-        chart = alt.layer(c_hist, c_band, c_fc, rule_fc).properties(height=500).configure_legend(
-            orient='bottom', title=None, labelFontSize=12,
-        ).configure_axis(grid=True, gridOpacity=0.3)
-        
-        st.altair_chart(chart, use_container_width=True)
-
-        st.subheader("Model Performance")
-        fp1, fp2, fp3, fp4, fp5 = st.columns(5)
-        with fp1: st.metric("MAE", f"${fc_metrics['mae']:.2f}", help="Mean Absolute Error")
-        with fp2: st.metric("MAPE", f"{fc_metrics['mape']:.2%}", help="Mean Absolute Percentage Error")
-        with fp3: st.metric("RMSE", f"${fc_metrics['rmse']:.2f}", help="Root Mean Squared Error")
-        with fp4: st.metric("R² Score", f"{fc_metrics['r2']:.3f}")
-        with fp5: st.metric("Model", fc_metrics['model'])
-            
-        st.markdown(f"**Prediction (+{horizon_fc}d):** ${fc_df['forecast'].iloc[-1]:.2f}")
-
-    else:
-        st.warning("Not enough data to train model.")
+                alt.Tooltip("Asset Price ($):Q", format="$.2f"),
+                alt.Tooltip("Strategy (Base 100):Q

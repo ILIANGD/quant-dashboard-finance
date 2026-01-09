@@ -22,7 +22,7 @@ from services.data_loader import load_price_history, load_live_quote
 
 ASSET_DB = {
     "BONDS & RATES": {
-        "German 10Y Bund Yield": "^TNX", # Proxy often used if exact ticker not available
+        "German 10Y Bund Yield": "^TNX",
         "US Treasury Yield 10 Years": "^TNX",
         "US Treasury Yield 30 Years": "^TYX",
         "US Treasury Yield 5 Years": "^FVX"
@@ -501,7 +501,7 @@ def single_asset_page():
         with m4: metric_card("Max Drawdown", f"{metrics_asset['max_drawdown']:.2%}", "Max loss")
 
     # ==========================================
-    # 3. PERFORMANCE (Chart: Interactive)
+    # 3. PERFORMANCE (Chart: Optimized Interactive Cursor)
     # ==========================================
     st.divider()
     st.subheader(f"Price & Strategy Performance ({strat_label})")
@@ -510,39 +510,56 @@ def single_asset_page():
     df_perf.columns = ["Asset Price ($)", "Strategy (Base 100)"]
     df_perf = df_perf.reset_index().rename(columns={df_perf.index.name or "index": "date"})
 
+    # --- FLUID INTERACTIVITY LOGIC ---
+    # To prevent lag and ensure a clean tooltip box, we use a single rule layer
+    # that captures the mouse position and displays BOTH values.
+    
+    # 1. Base Chart
     base = alt.Chart(df_perf).encode(
         x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
     )
 
-    # 1. Asset Price Line (BLUE)
+    # 2. Selection (Nearest Point on X axis)
+    hover = alt.selection_point(
+        fields=["date"],
+        nearest=True,
+        on="mouseover",
+        empty="none",
+        clear="mouseout"
+    )
+
+    # 3. Lines
     line_asset = base.mark_line(stroke="#4A90E2", interpolate="monotone").encode(
         y=alt.Y(
             "Asset Price ($):Q",
             title="Asset Price ($)",
             scale=alt.Scale(zero=False),
             axis=alt.Axis(titleColor="#4A90E2", grid=True, gridOpacity=0.3)
-        ),
-        tooltip=[
-            alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
-            alt.Tooltip("Asset Price ($):Q", title="Price", format="$.2f")
-        ]
+        )
     )
 
-    # 2. Strategy Line (RED)
     line_strat = base.mark_line(stroke="#FF4B4B", interpolate="monotone").encode(
         y=alt.Y(
             "Strategy (Base 100):Q",
             title="Strategy Performance (Base 100)",
             scale=alt.Scale(zero=False),
             axis=alt.Axis(titleColor="#FF4B4B", orient="right", grid=False)
-        ),
-        tooltip=[
-            alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
-            alt.Tooltip("Strategy (Base 100):Q", title="Strategy (Base 100)", format=".2f")
-        ]
+        )
     )
 
-    chart_perf = alt.layer(line_asset, line_strat).resolve_scale(
+    # 4. The Cursor (Vertical Rule)
+    # The Tooltip is attached HERE. It reads the row from df_perf, so it has access to both columns.
+    cursor = base.mark_rule(color="gray", strokeWidth=1.5).encode(
+        opacity=alt.condition(hover, alt.value(0.6), alt.value(0)),
+        tooltip=[
+            alt.Tooltip("date:T", title="Date", format="%d %B %Y"),
+            alt.Tooltip("Asset Price ($):Q", title="Asset Price ($)", format="$.2f"),
+            alt.Tooltip("Strategy (Base 100):Q", title="Strategy (Base 100)", format=".2f")
+        ]
+    ).add_params(hover)
+
+    # Combine with independent Y scales
+    chart_perf = alt.layer(line_asset, line_strat, cursor).resolve_scale(
         y='independent'
     ).properties(height=450)
 

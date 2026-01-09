@@ -5,7 +5,18 @@
 __pycache__/
 *.pyc
 
+# Virtual Environment (TRÈS IMPORTANT - Ne jamais commiter ça)
+.venv/
+venv/
+env/
+
+# Streamlit
+.streamlit/secrets.toml
+
 # IDE (PyCharm / VSCode)
 .idea/
 .vscode/
 *.iml
+
+# Logs & Automation
+cron/cron.log

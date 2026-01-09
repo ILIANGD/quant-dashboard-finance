@@ -17,15 +17,45 @@ from services.data_loader import load_price_history, load_live_quote
 
 
 # =========================
-# ASSET DATABASE (Expanded & Sorted)
+# ASSET DATABASE (Expanded with Global Indices)
 # =========================
 
 ASSET_DB = {
+    "GLOBAL & REGIONAL (ETFs/Indices)": {
+        "MSCI World (iShares)": "URTH",
+        "MSCI ACWI - All Country (iShares)": "ACWI",
+        "MSCI Emerging Markets (iShares)": "EEM",
+        "Vanguard Total World Stock": "VT",
+        "Euro Stoxx 600": "^STOXX",
+        "Vanguard FTSE Europe": "VGK",
+        "iShares Asia 50": "AIA"
+    },
+    "US SECTORS (SPDR ETFs)": {
+        "Technology (XLK)": "XLK",
+        "Financials (XLF)": "XLF",
+        "Healthcare (XLV)": "XLV",
+        "Energy (XLE)": "XLE",
+        "Semiconductors (SOXX)": "SOXX",
+        "Consumer Discretionary (XLY)": "XLY",
+        "Consumer Staples (XLP)": "XLP",
+        "Utilities (XLU)": "XLU",
+        "Industrials (XLI)": "XLI"
+    },
+    "REAL ESTATE (REITs)": {
+        "Vanguard Real Estate (US)": "VNQ",
+        "iShares Global REIT": "REET",
+        "Simon Property Group": "SPG",
+        "Prologis": "PLD",
+        "Realty Income": "O"
+    },
     "BONDS & RATES": {
-        "German 10Y Bund Yield": "^TNX",
+        "German 10Y Bund Yield": "^TNX", # Proxy often used
         "US Treasury Yield 10 Years": "^TNX",
         "US Treasury Yield 30 Years": "^TYX",
-        "US Treasury Yield 5 Years": "^FVX"
+        "US Treasury Yield 5 Years": "^FVX",
+        "iShares 20+ Year Treasury Bond (TLT)": "TLT",
+        "iShares 7-10 Year Treasury Bond (IEF)": "IEF",
+        "iShares Core US Aggregate Bond (AGG)": "AGG"
     },
     "COMMODITIES - AGRI": {
         "Cocoa": "CC=F",
@@ -49,7 +79,8 @@ ASSET_DB = {
         "Gasoline (RBOB)": "RB=F",
         "Heating Oil": "HO=F",
         "Natural Gas": "NG=F",
-        "WTI Crude Oil": "CL=F"
+        "WTI Crude Oil": "CL=F",
+        "Uranium (URA ETF)": "URA"
     },
     "COMMODITIES - METALS": {
         "Aluminum": "ALI=F",
@@ -57,7 +88,8 @@ ASSET_DB = {
         "Gold": "GC=F",
         "Palladium": "PA=F",
         "Platinum": "PL=F",
-        "Silver": "SI=F"
+        "Silver": "SI=F",
+        "Lithium (LIT ETF)": "LIT"
     },
     "CRYPTO": {
         "Avalanche": "AVAX-USD",
@@ -190,16 +222,14 @@ ASSET_DB = {
 }
 
 # Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
-# Categories are sorted alphabetically by key definition above
 FLAT_ASSETS = {}
 for category in sorted(ASSET_DB.keys()):
     items = ASSET_DB[category]
-    # Items are sorted alphabetically by Name
     for name in sorted(items.keys()):
         label = f"{category} | {name} ({items[name]})"
         FLAT_ASSETS[label] = items[name]
 
-# Reverse lookup for URL handling (Ticker -> Label)
+# Reverse lookup for URL handling
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 
 
@@ -512,7 +542,7 @@ def single_asset_page():
         with m4: metric_card("Max Drawdown", f"{metrics_asset['max_drawdown']:.2%}", "Max loss")
 
     # ==========================================
-    # 3. PERFORMANCE (Chart: Fluid Interaction)
+    # 3. PERFORMANCE (Chart: Optimized Interactive Cursor)
     # ==========================================
     st.divider()
     st.subheader(f"Price & Strategy Performance ({strat_label})")
@@ -552,7 +582,6 @@ def single_asset_page():
         )
     )
 
-    # Unified Tooltip via Rule
     cursor = base.mark_rule(color="gray", strokeWidth=1.5).encode(
         opacity=alt.condition(hover, alt.value(0.6), alt.value(0)),
         tooltip=[
@@ -582,18 +611,14 @@ def single_asset_page():
     fc_df, fc_metrics = train_forecast_model(prices, horizon_fc, log_fc)
 
     if not fc_df.empty:
-        # Prepare Data for Fluid Chart
         hist_data = prices.iloc[-252:].to_frame("price").reset_index() 
         hist_data.columns = ["date", "price"]
         
         fc_data = fc_df.reset_index().rename(columns={"index": "date"})
         
-        # Combine for Tooltip logic (using separate layers but shared X selection)
-        
         x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
         y_axis = alt.Y("price:Q", scale=alt.Scale(zero=False), axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
 
-        # Selection
         hover_fc = alt.selection_point(
             fields=["date"],
             nearest=True,
@@ -602,7 +627,6 @@ def single_asset_page():
             clear="mouseout"
         )
 
-        # Layers
         c_hist = alt.Chart(hist_data).mark_line().encode(
             x=x_axis, y=y_axis,
             color=alt.value("#4A90E2"), stroke=alt.datum("Historic Price")
@@ -620,12 +644,7 @@ def single_asset_page():
             color=alt.value("#FF4B4B"), fill=alt.datum("95% Confidence Interval")
         )
 
-        # Combined dataset for Rule Tooltip is tricky because they don't overlap in time usually.
-        # But we can just use two rules or a rule that uses the 'fc_data' for future and 'hist_data' for past?
-        # Actually, easiest is just to add tooltips to the lines themselves for Forecast/History distinction,
-        # OR concat them for a unified rule. Let's concat for the rule data source.
-        
-        # Prepare combo for Rule
+        # Combo for Unified Tooltip Rule
         df_h_lite = hist_data.copy()
         df_h_lite["Forecast"] = np.nan
         df_h_lite["Lower"] = np.nan
@@ -657,8 +676,6 @@ def single_asset_page():
         st.altair_chart(chart, use_container_width=True)
 
         st.subheader("Model Performance")
-        
-        # UPDATED METRICS LAYOUT
         fp1, fp2, fp3, fp4, fp5 = st.columns(5)
         with fp1: st.metric("MAE", f"${fc_metrics['mae']:.2f}", help="Mean Absolute Error")
         with fp2: st.metric("MAPE", f"{fc_metrics['mape']:.2%}", help="Mean Absolute Percentage Error")

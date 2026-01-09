@@ -245,20 +245,22 @@ def backtest_buy_hold(prices: pd.Series) -> pd.Series:
     return equity
 
 
-def backtest_momentum_ma(prices: pd.Series, fast: int = 20, slow: int = 50) -> pd.Series:
-    """Momentum MA crossover."""
+def backtest_momentum(prices: pd.Series, lookback: int = 50) -> pd.Series:
+    """
+    Single Parameter Momentum (Trend Following).
+    Logic: Buy if Price > SMA(lookback).
+    """
     prices = prices.dropna()
     rets = prices.pct_change().dropna()
 
-    ma_fast = prices.rolling(fast).mean()
-    ma_slow = prices.rolling(slow).mean()
-
-    signal = (ma_fast > ma_slow).astype(int)
+    sma = prices.rolling(lookback).mean()
+    signal = (prices > sma).astype(int)
+    
     position = signal.shift(1).reindex(rets.index).fillna(0)
 
     strat_rets = position * rets
     equity = (1 + strat_rets).cumprod()
-    equity.name = "Momentum"
+    equity.name = f"Momentum_{lookback}d"
     return equity
 
 
@@ -470,25 +472,24 @@ def single_asset_page():
             interval = interval_map[interval_label]
 
         with c4:
-            strategy_name = st.selectbox("Backtesting Strategy", ["Buy & Hold", "Momentum (MA Cross)", "Breakout"], index=0)
+            # MODIFIED: Renamed option
+            strategy_name = st.selectbox("Backtesting Strategy", ["Buy & Hold", "Momentum", "Breakout"], index=0)
 
         st.divider()
         
-        # RESTORED: Strategy Params
+        # MODIFIED: Strategy Params Logic
         ac1, ac2 = st.columns(2)
         with ac1:
             st.markdown("**Strategy Settings**")
+            
             if "Momentum" in strategy_name:
-                sc1, sc2 = st.columns(2)
-                fast = sc1.slider("Fast MA", 5, 50, 20)
-                slow = sc2.slider("Slow MA", 20, 200, 50)
-                lookback = 50 # Unused but set for variable stability
+                # NEW: Single lookback parameter for Momentum
+                lookback = st.slider("Momentum Lookback", 5, 200, 50, help="Buy if Price > SMA(Lookback)")
             elif "Breakout" in strategy_name:
-                lookback = st.slider("Breakout Lookback", 10, 200, 50)
-                fast, slow = 20, 50 # Unused defaults
+                lookback = st.slider("Breakout Lookback", 10, 200, 50, help="Buy if Price > High(Lookback)")
             else:
                 st.caption("Standard Buy & Hold strategy (no parameters).")
-                fast, slow, lookback = 20, 50, 50
+                lookback = 50 # Default safe value
         
         with ac2:
             st.markdown("**Forecast Settings**")
@@ -507,14 +508,22 @@ def single_asset_page():
 
     if prices.empty: st.warning("No data available."); return
 
-    # Strategies
+    # Strategies Execution
     equity_bh = backtest_buy_hold(prices)
-    equity_mom = backtest_momentum_ma(prices, fast, slow)
+    # MODIFIED: Call new function
+    equity_mom = backtest_momentum(prices, lookback)
     equity_brk = backtest_breakout(prices, lookback)
 
-    if "Momentum" in strategy_name: equity_sel = equity_mom; strat_label = "Momentum"
-    elif "Breakout" in strategy_name: equity_sel = equity_brk; strat_label = "Breakout"
-    else: equity_sel = equity_bh; strat_label = "Buy & Hold"
+    # Logic Selection
+    if "Momentum" in strategy_name: 
+        equity_sel = equity_mom
+        strat_label = f"Momentum ({lookback}d)"
+    elif "Breakout" in strategy_name: 
+        equity_sel = equity_brk
+        strat_label = f"Breakout ({lookback}d)"
+    else: 
+        equity_sel = equity_bh
+        strat_label = "Buy & Hold"
 
     metrics_asset = compute_metrics(prices)
     metrics_strat = compute_metrics(equity_sel)

@@ -77,7 +77,7 @@ pip install -r requirements.txt
 streamlit run Home.py
 ```
 
-The app will be accessible at `http://localhost:8501` (or your VM's public IP).
+The app will be accessible at `[http://localhost:8501](http://13.38.251.141:8501/)`.
 
 ---
 

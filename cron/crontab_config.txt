@@ -1,0 +1,13 @@
+# =========================================================
+# CRON JOB CONFIGURATION
+# =========================================================
+#
+# Description:
+# Runs the daily market report generation script every day at 8:00 PM server time.
+#
+# Instructions:
+# 1. Edit the crontab: crontab -e
+# 2. Add the line below (adjusting /path/to/project/):
+# 3. Make sure the .sh script is executable: chmod +x cron/run_daily_report.sh
+
+0 20 * * * /bin/bash /home/ubuntu/quant-dashboard-finance/cron/run_daily_report.sh >> /home/ubuntu/quant-dashboard-finance/cron/cron.log 2>&1

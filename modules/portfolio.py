@@ -490,8 +490,8 @@ def portfolio_page():
         with m4: metric_card("Max Drawdown", f"{port_metrics['max_drawdown']:.2%}")
         with m5: metric_card("Div. Ratio", f"{div_ratio:.2f}", "Diversification Ratio (>1 is better)")
 
-# ==========================================
-    # 3. PERFORMANCE CHART (Optimized for Speed)
+    # ==========================================
+    # 3. PERFORMANCE CHART (Fixed Tooltips)
     # ==========================================
     st.divider()
     st.subheader("Relative Performance (Base 100)")
@@ -505,8 +505,6 @@ def portfolio_page():
     df_wide = df_wide.reset_index().rename(columns={df_wide.index.name or "Date": "date"})
 
     # --- OPTIMIZATION: SMART SAMPLING ---
-    # Si plus de 500 points, on réduit la densité pour fluidifier le curseur
-    # Cela ne change pas les calculs, juste l'affichage graphique.
     MAX_POINTS = 500
     if len(df_wide) > MAX_POINTS:
         step = len(df_wide) // MAX_POINTS + 1
@@ -514,16 +512,14 @@ def portfolio_page():
     else:
         df_chart_source = df_wide.copy()
 
-    # --- OPTIMIZATION: PANDAS MELT ---
-    # On transforme en format "Long" via Pandas (plus rapide que Vega-Lite)
+    # --- PANDAS MELT (Long format for lines) ---
     df_long = df_chart_source.melt(id_vars=["date"], var_name="Asset", value_name="Value")
     
     # Colors
     domain = ["Portfolio"] + list(prices_df.columns)
     range_ = ["#FF4B4B"] + ["#4A90E2", "#50C878", "#FFD700", "#9370DB", "#FF8C00", "#00CED1", "#C71585", "#808080"][:len(prices_df.columns)]
 
-    # 1. Base Selection (Mouse X)
-    # On utilise "date" comme pivot unique
+    # 1. Base Selection
     hover = alt.selection_point(
         fields=["date"],
         nearest=True,
@@ -532,43 +528,39 @@ def portfolio_page():
         clear="mouseout"
     )
 
-    # 2. Chart definition
-    base = alt.Chart(df_long).encode(
-        x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
-    )
+    # 2. Dynamic Tooltip List construction
+    tooltip_list = [alt.Tooltip("date", title="Date", format="%d/%m/%Y")]
+    tooltip_list.append(alt.Tooltip("Portfolio", title="Portfolio", format=".2f"))
+    for t in prices_df.columns:
+        tooltip_list.append(alt.Tooltip(t, title=t, format=".2f"))
 
-    lines = base.mark_line().encode(
+    # 3. Chart Layers
+    
+    # A. Lines (The curves)
+    lines = alt.Chart(df_long).mark_line().encode(
+        x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3)),
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
         color=alt.Color("Asset:N", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(orient="bottom")),
         strokeWidth=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1.5)),
         opacity=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.6))
     )
 
-    # 3. Invisible selector layer (Optimization technique)
-    # On crée une couche invisible qui ne contient que les dates uniques pour capter la souris
-    # Cela évite à Altair de calculer la distance sur toutes les lignes en même temps
+    # B. Selectors (Invisible points that capture mouse & SHOW TOOLTIPS)
+    # CORRECTION : Le tooltip est déplacé ici
     selectors = alt.Chart(df_chart_source).mark_point().encode(
         x="date:T",
         opacity=alt.value(0),
+        tooltip=tooltip_list 
     ).add_params(hover)
 
-    # 4. The Vertical Rule & Tooltips
-    # Dynamic Tooltip List construction
-    tooltip_list = [alt.Tooltip("date", title="Date", format="%d/%m/%Y")]
-    # On force l'ordre pour avoir Portfolio en premier
-    tooltip_list.append(alt.Tooltip("Portfolio", title="Portfolio", format=".2f"))
-    for t in prices_df.columns:
-        tooltip_list.append(alt.Tooltip(t, title=t, format=".2f"))
-
-    # Pour les tooltips, on utilise df_chart_source (wide) car c'est plus facile d'afficher
-    # toutes les colonnes d'un coup sur une seule règle verticale
+    # C. Rule (The vertical line visual)
+    # CORRECTION : On retire le tooltip d'ici, il ne sert plus qu'à l'affichage de la ligne
     rule = alt.Chart(df_chart_source).mark_rule(color="gray").encode(
         x="date:T",
-        opacity=alt.condition(hover, alt.value(0.5), alt.value(0)),
-        tooltip=tooltip_list
-    ).transform_filter(hover) # Affiche la règle seulement quand hovered
+        opacity=alt.condition(hover, alt.value(0.5), alt.value(0))
+    ).transform_filter(hover)
 
-    # Combine: Layers order matters
+    # Combine
     chart = alt.layer(lines, selectors, rule).properties(height=450)
 
     st.altair_chart(chart, use_container_width=True)

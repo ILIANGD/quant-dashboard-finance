@@ -7,7 +7,6 @@ from services.data_loader import load_live_quote
 # ==========================================
 st.set_page_config(
     page_title="Quant Dashboard",
-    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -86,10 +85,11 @@ def home_page():
     st.title("Quantitative Finance Dashboard")
     st.markdown(
         """
-        **Advanced analytics platform for asset pricing, strategy backtesting, and portfolio optimization.**
+        **Deploy institutional-grade analytics to identify market trends, forecast asset prices using machine learning, 
+        and engineer diversified portfolios with advanced risk management.**
         
-        Leverage institutional-grade tools to analyze trends, forecast movements using machine learning, 
-        and construct diversified portfolios with risk-adjusted performance metrics.
+        This platform integrates real-time data, algorithmic backtesting, and predictive modeling to support 
+        data-driven investment decisions.
         """
     )
     
@@ -112,7 +112,7 @@ def home_page():
                 
                 **Key Features:**
                 * **Backtesting Engines:** Buy & Hold, Momentum (MA Crossover), Volatility Breakout.
-                * **AI Forecasting:** Linear Regression trends with confidence intervals.
+                * **AI Forecasting:** Weighted Linear Regression trends with confidence intervals.
                 * **Risk Metrics:** Sharpe Ratio, Sortino, Max Drawdown, Calmar Ratio.
                 * **Interactive Charts:** Zoomable price history and strategy performance curves.
                 """

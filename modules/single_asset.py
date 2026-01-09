@@ -4,7 +4,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import altair as alt
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 import locale
 
 # Tenter de définir la locale pour le formatage
@@ -321,9 +321,19 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
     
     # Calculate In-Sample Performance
     y_pred_hist = model.predict(X)
-    r2 = r2_score(y, y_pred_hist)
-    rmse = np.sqrt(mean_squared_error(y, y_pred_hist))
-    if use_log: rmse = np.exp(rmse) 
+    
+    # Compute Metrics on original scale for readability
+    if use_log:
+        y_true = s.values
+        y_pred = np.exp(y_pred_hist)
+    else:
+        y_true = s.values
+        y_pred = y_pred_hist
+
+    r2 = r2_score(y_true, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+    mae = mean_absolute_error(y_true, y_pred)
+    mape = mean_absolute_percentage_error(y_true, y_pred)
 
     # Predict Future
     last_idx = X[-1][0]
@@ -361,7 +371,9 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
     metrics = {
         "r2": r2,
         "rmse": rmse,
-        "model": "Linear Regression (Log-Transformed)" if use_log else "Linear Regression"
+        "mae": mae,
+        "mape": mape,
+        "model": "Linear Regression (Log)" if use_log else "Linear Regression"
     }
 
     return df_fc, metrics
@@ -381,7 +393,6 @@ def single_asset_page():
     with st.container(border=True):
         st.subheader("Controls")
         
-        # INCREASED WIDTH for Asset Selection (3 : 1 : 1 : 1)
         c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
         with c1:
             # 1. Retrieve ticker from URL
@@ -501,7 +512,7 @@ def single_asset_page():
         with m4: metric_card("Max Drawdown", f"{metrics_asset['max_drawdown']:.2%}", "Max loss")
 
     # ==========================================
-    # 3. PERFORMANCE (Chart: Optimized Interactive Cursor)
+    # 3. PERFORMANCE (Chart: Fluid Interaction)
     # ==========================================
     st.divider()
     st.subheader(f"Price & Strategy Performance ({strat_label})")
@@ -511,15 +522,10 @@ def single_asset_page():
     df_perf = df_perf.reset_index().rename(columns={df_perf.index.name or "index": "date"})
 
     # --- FLUID INTERACTIVITY LOGIC ---
-    # To prevent lag and ensure a clean tooltip box, we use a single rule layer
-    # that captures the mouse position and displays BOTH values.
-    
-    # 1. Base Chart
     base = alt.Chart(df_perf).encode(
         x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3))
     )
 
-    # 2. Selection (Nearest Point on X axis)
     hover = alt.selection_point(
         fields=["date"],
         nearest=True,
@@ -528,7 +534,6 @@ def single_asset_page():
         clear="mouseout"
     )
 
-    # 3. Lines
     line_asset = base.mark_line(stroke="#4A90E2", interpolate="monotone").encode(
         y=alt.Y(
             "Asset Price ($):Q",
@@ -547,8 +552,7 @@ def single_asset_page():
         )
     )
 
-    # 4. The Cursor (Vertical Rule)
-    # The Tooltip is attached HERE. It reads the row from df_perf, so it has access to both columns.
+    # Unified Tooltip via Rule
     cursor = base.mark_rule(color="gray", strokeWidth=1.5).encode(
         opacity=alt.condition(hover, alt.value(0.6), alt.value(0)),
         tooltip=[
@@ -558,7 +562,6 @@ def single_asset_page():
         ]
     ).add_params(hover)
 
-    # Combine with independent Y scales
     chart_perf = alt.layer(line_asset, line_strat, cursor).resolve_scale(
         y='independent'
     ).properties(height=450)
@@ -571,7 +574,7 @@ def single_asset_page():
     display_metrics_grid(metrics_strat)
 
     # ==========================================
-    # 4. FORECAST (Blue & Red + Interactive)
+    # 4. FORECAST (Updated: Metrics + Fluid Interaction)
     # ==========================================
     st.divider()
     st.header("Forecast Analysis")
@@ -579,57 +582,91 @@ def single_asset_page():
     fc_df, fc_metrics = train_forecast_model(prices, horizon_fc, log_fc)
 
     if not fc_df.empty:
+        # Prepare Data for Fluid Chart
         hist_data = prices.iloc[-252:].to_frame("price").reset_index() 
         hist_data.columns = ["date", "price"]
+        
         fc_data = fc_df.reset_index().rename(columns={"index": "date"})
+        
+        # Combine for Tooltip logic (using separate layers but shared X selection)
         
         x_axis = alt.X("date:T", axis=alt.Axis(format="%d/%m", title="Date", grid=True, gridOpacity=0.3))
         y_axis = alt.Y("price:Q", scale=alt.Scale(zero=False), axis=alt.Axis(format="$f", title="Price ($)", grid=True, gridOpacity=0.3))
 
-        # Historique en BLEU
+        # Selection
+        hover_fc = alt.selection_point(
+            fields=["date"],
+            nearest=True,
+            on="mouseover",
+            empty="none",
+            clear="mouseout"
+        )
+
+        # Layers
         c_hist = alt.Chart(hist_data).mark_line().encode(
             x=x_axis, y=y_axis,
-            color=alt.value("#4A90E2"), stroke=alt.datum("Historic Price"),
-            tooltip=[
-                alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
-                alt.Tooltip("price:Q", title="Price", format="$.2f")
-            ]
+            color=alt.value("#4A90E2"), stroke=alt.datum("Historic Price")
         )
         
-        # Prédiction en ROUGE
         c_fc = alt.Chart(fc_data).mark_line(strokeDash=[6, 4]).encode(
             x=x_axis, y=alt.Y("forecast:Q", scale=alt.Scale(zero=False)),
-            color=alt.value("#FF4B4B"), stroke=alt.datum("Prediction"),
-            tooltip=[
-                alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
-                alt.Tooltip("forecast:Q", title="Forecast", format="$.2f")
-            ]
+            color=alt.value("#FF4B4B"), stroke=alt.datum("Prediction")
         )
         
-        # Intervalle ROUGE clair
         c_band = alt.Chart(fc_data).mark_area(opacity=0.2).encode(
             x=x_axis,
             y=alt.Y("lower:Q", scale=alt.Scale(zero=False)),
             y2="upper:Q",
-            color=alt.value("#FF4B4B"), fill=alt.datum("95% Confidence Interval"),
-            tooltip=[
-                alt.Tooltip("date:T", title="Date", format="%d/%m/%Y"),
-                alt.Tooltip("lower:Q", title="Lower Bound", format="$.2f"),
-                alt.Tooltip("upper:Q", title="Upper Bound", format="$.2f")
-            ]
+            color=alt.value("#FF4B4B"), fill=alt.datum("95% Confidence Interval")
         )
 
-        chart = alt.layer(c_hist, c_band, c_fc).properties(height=500).configure_legend(
+        # Combined dataset for Rule Tooltip is tricky because they don't overlap in time usually.
+        # But we can just use two rules or a rule that uses the 'fc_data' for future and 'hist_data' for past?
+        # Actually, easiest is just to add tooltips to the lines themselves for Forecast/History distinction,
+        # OR concat them for a unified rule. Let's concat for the rule data source.
+        
+        # Prepare combo for Rule
+        df_h_lite = hist_data.copy()
+        df_h_lite["Forecast"] = np.nan
+        df_h_lite["Lower"] = np.nan
+        df_h_lite["Upper"] = np.nan
+        df_h_lite = df_h_lite.rename(columns={"price": "Price"})
+        
+        df_f_lite = fc_data.copy()
+        df_f_lite["Price"] = np.nan
+        df_f_lite = df_f_lite.rename(columns={"forecast": "Forecast", "lower": "Lower", "upper": "Upper"})
+        
+        df_combo = pd.concat([df_h_lite, df_f_lite], ignore_index=True)
+        
+        rule_fc = alt.Chart(df_combo).mark_rule(color="gray", strokeWidth=1.5).encode(
+            x="date:T",
+            opacity=alt.condition(hover_fc, alt.value(0.6), alt.value(0)),
+            tooltip=[
+                alt.Tooltip("date:T", title="Date", format="%d %B %Y"),
+                alt.Tooltip("Price:Q", format="$.2f"),
+                alt.Tooltip("Forecast:Q", format="$.2f"),
+                alt.Tooltip("Lower:Q", format="$.2f"),
+                alt.Tooltip("Upper:Q", format="$.2f"),
+            ]
+        ).add_params(hover_fc)
+
+        chart = alt.layer(c_hist, c_band, c_fc, rule_fc).properties(height=500).configure_legend(
             orient='bottom', title=None, labelFontSize=12,
         ).configure_axis(grid=True, gridOpacity=0.3)
         
         st.altair_chart(chart, use_container_width=True)
 
         st.subheader("Model Performance")
-        fp1, fp2, fp3 = st.columns(3)
-        with fp1: st.info(f"**Algorithm:** {fc_metrics['model']}")
-        with fp2: st.metric("R² Score", f"{fc_metrics['r2']:.3f}")
-        with fp3: st.metric("RMSE", f"${fc_metrics['rmse']:.2f}")
+        
+        # UPDATED METRICS LAYOUT
+        fp1, fp2, fp3, fp4, fp5 = st.columns(5)
+        with fp1: st.metric("MAE", f"${fc_metrics['mae']:.2f}", help="Mean Absolute Error")
+        with fp2: st.metric("MAPE", f"{fc_metrics['mape']:.2%}", help="Mean Absolute Percentage Error")
+        with fp3: st.metric("RMSE", f"${fc_metrics['rmse']:.2f}", help="Root Mean Squared Error")
+        with fp4: st.metric("R² Score", f"{fc_metrics['r2']:.3f}")
+        with fp5: st.metric("Model", fc_metrics['model'])
+            
         st.markdown(f"**Prediction (+{horizon_fc}d):** ${fc_df['forecast'].iloc[-1]:.2f}")
+
     else:
         st.warning("Not enough data to train model.")

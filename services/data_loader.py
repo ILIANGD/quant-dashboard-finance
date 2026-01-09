@@ -13,21 +13,25 @@ def load_price_history(ticker: str, period: str = "1y", interval: str = "1d") ->
     """
     Downloads historical data from Yahoo Finance.
     Cached for 1 hour (3600s) to reduce latency.
-    Returns a DataFrame with columns: ['price', 'open', 'high', 'low', 'volume']
+    
+    CRITICAL FIX: Always downloads '1d' data and resamples locally to avoid 
+    sparse data issues (straight lines) with Yahoo Finance on Futures/Forex 
+    when requesting '1wk' or '1mo'.
     """
     try:
+        # 1. FORCE '1d' interval regardless of what is requested to ensure data density
         # auto_adjust=True récupère les prix ajustés (dividendes/splits)
-        df = yf.download(ticker, period=period, interval=interval, progress=False, auto_adjust=True)
+        df = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=True)
 
         if df.empty:
             logger.warning(f"No data found for ticker: {ticker}")
             return pd.DataFrame()
 
-        # 1. Gestion des MultiIndex (yfinance renvoie parfois ('Close', 'AAPL'))
+        # 2. Gestion des MultiIndex (yfinance renvoie parfois ('Close', 'AAPL'))
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # 2. Renommage standardisé
+        # 3. Renommage standardisé
         # On mappe "Close" vers "price" pour l'uniformité du projet
         df = df.rename(columns={
             "Close": "price", 
@@ -37,13 +41,26 @@ def load_price_history(ticker: str, period: str = "1y", interval: str = "1d") ->
             "Volume": "volume"
         })
 
-        # 3. Suppression de la Timezone (Crucial pour Altair)
+        # 4. Suppression de la Timezone (Crucial pour Altair)
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
 
-        # 4. Validation
+        # 5. Validation de base
         if "price" not in df.columns:
             return pd.DataFrame()
+
+        # 6. RESAMPLING MANUEL (La correction magique) 
+        # Si l'utilisateur voulait du Weekly ou Monthly, on le calcule nous-mêmes proprement.
+        if interval == "1wk":
+            # On prend le dernier prix de la semaine (Vendredi)
+            # 'W-FRI' assure que la date affichée est la fin de semaine
+            df = df.resample("W-FRI").last().dropna()
+        elif interval == "1mo":
+            # On prend le dernier prix du mois
+            try:
+                df = df.resample("ME").last().dropna() # Pandas >= 2.2
+            except:
+                df = df.resample("M").last().dropna()  # Pandas < 2.2
 
         # On retourne les colonnes utiles
         cols = [c for c in ["price", "open", "high", "low", "volume"] if c in df.columns]

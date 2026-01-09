@@ -17,7 +17,7 @@ from services.data_loader import load_price_history, load_live_quote
 
 
 # =========================
-# ASSET DATABASE (Expanded with Global Indices)
+# ASSET DATABASE
 # =========================
 
 ASSET_DB = {
@@ -49,7 +49,7 @@ ASSET_DB = {
         "Realty Income": "O"
     },
     "BONDS & RATES": {
-        "German 10Y Bund Yield": "^TNX", # Proxy often used
+        "German 10Y Bund Yield": "^TNX",
         "US Treasury Yield 10 Years": "^TNX",
         "US Treasury Yield 30 Years": "^TYX",
         "US Treasury Yield 5 Years": "^FVX",
@@ -222,14 +222,16 @@ ASSET_DB = {
 }
 
 # Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
+# Categories are sorted alphabetically by key definition above
 FLAT_ASSETS = {}
 for category in sorted(ASSET_DB.keys()):
     items = ASSET_DB[category]
+    # Items are sorted alphabetically by Name
     for name in sorted(items.keys()):
         label = f"{category} | {name} ({items[name]})"
         FLAT_ASSETS[label] = items[name]
 
-# Reverse lookup for URL handling
+# Reverse lookup for URL handling (Ticker -> Label)
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 
 
@@ -467,27 +469,15 @@ def single_asset_page():
 
         st.divider()
         
-        # Advanced Params
-        ac1, ac2 = st.columns(2)
-        with ac1:
-            st.markdown("**Strategy Settings**")
-            if "Momentum" in strategy_name:
-                sc1, sc2 = st.columns(2)
-                fast = sc1.slider("Fast MA", 5, 50, 20)
-                slow = sc2.slider("Slow MA", 20, 200, 50)
-                lookback = 50
-            elif "Breakout" in strategy_name:
-                lookback = st.slider("Breakout Lookback", 10, 200, 50)
-                fast, slow = 20, 50
-            else:
-                st.caption("Standard Buy & Hold.")
-                fast, slow, lookback = 20, 50, 50
+        # Hardcoded Strategy Settings (Hidden)
+        fast, slow = 20, 50
+        lookback = 50
         
-        with ac2:
-            st.markdown("**Forecast Settings**")
-            fc1, fc2 = st.columns(2)
-            with fc1: horizon_fc = st.slider("Horizon (days)", 5, 120, 60)
-            with fc2: log_fc = st.toggle("Log-Space Model", value=True)
+        # Forecast Settings
+        st.markdown("**Forecast Settings**")
+        fc1, fc2 = st.columns(2)
+        with fc1: horizon_fc = st.slider("Horizon (days)", 5, 120, 60)
+        with fc2: log_fc = st.toggle("Log-Space Model", value=True)
 
     # Load Data
     try:

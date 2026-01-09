@@ -491,7 +491,7 @@ def portfolio_page():
         with m5: metric_card("Div. Ratio", f"{div_ratio:.2f}", "Diversification Ratio (>1 is better)")
 
     # ==========================================
-    # 3. PERFORMANCE CHART (Optimized WIDE format)
+    # 3. PERFORMANCE CHART (Fixed Tooltips)
     # ==========================================
     st.divider()
     st.subheader("Relative Performance (Base 100)")
@@ -500,16 +500,26 @@ def portfolio_page():
     norm_assets = (prices_df / prices_df.iloc[0]) * 100
     norm_port = (port_equity / port_equity.iloc[0]) * 100
     
-    # Copy to keep clean
     df_wide = norm_assets.copy()
     df_wide["Portfolio"] = norm_port
     df_wide = df_wide.reset_index().rename(columns={df_wide.index.name or "Date": "date"})
+
+    # --- OPTIMIZATION: SMART SAMPLING ---
+    MAX_POINTS = 500
+    if len(df_wide) > MAX_POINTS:
+        step = len(df_wide) // MAX_POINTS + 1
+        df_chart_source = df_wide.iloc[::step].copy()
+    else:
+        df_chart_source = df_wide.copy()
+
+    # --- PANDAS MELT (Long format for lines) ---
+    df_long = df_chart_source.melt(id_vars=["date"], var_name="Asset", value_name="Value")
     
     # Colors
     domain = ["Portfolio"] + list(prices_df.columns)
     range_ = ["#FF4B4B"] + ["#4A90E2", "#50C878", "#FFD700", "#9370DB", "#FF8C00", "#00CED1", "#C71585", "#808080"][:len(prices_df.columns)]
 
-    # 1. Base Selection (Mouse X)
+    # 1. Base Selection
     hover = alt.selection_point(
         fields=["date"],
         nearest=True,
@@ -518,35 +528,40 @@ def portfolio_page():
         clear="mouseout"
     )
 
-    # 2. Lines (Transform Fold to convert Wide -> Long internally for drawing lines)
-    fold_cols = ["Portfolio"] + list(prices_df.columns)
+    # 2. Dynamic Tooltip List construction
+    tooltip_list = [alt.Tooltip("date", title="Date", format="%d/%m/%Y")]
+    tooltip_list.append(alt.Tooltip("Portfolio", title="Portfolio", format=".2f"))
+    for t in prices_df.columns:
+        tooltip_list.append(alt.Tooltip(t, title=t, format=".2f"))
+
+    # 3. Chart Layers
     
-    lines = alt.Chart(df_wide).transform_fold(
-        fold_cols,
-        as_=["Asset", "Value"]
-    ).mark_line().encode(
-        x="date:T",
+    # A. Lines (The curves)
+    lines = alt.Chart(df_long).mark_line().encode(
+        x=alt.X("date:T", title=None, axis=alt.Axis(format="%d/%m/%Y", grid=True, gridOpacity=0.3)),
         y=alt.Y("Value:Q", scale=alt.Scale(zero=False), axis=alt.Axis(title="Base 100")),
         color=alt.Color("Asset:N", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(orient="bottom")),
         strokeWidth=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(3), alt.value(1.5)),
         opacity=alt.condition(alt.datum.Asset == 'Portfolio', alt.value(1), alt.value(0.6))
     )
 
-    # 3. The Vertical Rule (Cursor)
-    # Dynamic Tooltip List: Date + Portfolio + Assets
-    tooltip_list = [alt.Tooltip("date", title="Date", format="%d/%m/%Y")]
-    tooltip_list.append(alt.Tooltip("Portfolio", title="Portfolio", format=".2f"))
-    for t in prices_df.columns:
-        tooltip_list.append(alt.Tooltip(t, title=t, format=".2f"))
-
-    rule = alt.Chart(df_wide).mark_rule(color="gray").encode(
+    # B. Selectors (Invisible points that capture mouse & SHOW TOOLTIPS)
+    # CORRECTION : Le tooltip est déplacé ici
+    selectors = alt.Chart(df_chart_source).mark_point().encode(
         x="date:T",
-        opacity=alt.condition(hover, alt.value(0.5), alt.value(0)),
-        tooltip=tooltip_list
+        opacity=alt.value(0),
+        tooltip=tooltip_list 
     ).add_params(hover)
 
+    # C. Rule (The vertical line visual)
+    # CORRECTION : On retire le tooltip d'ici, il ne sert plus qu'à l'affichage de la ligne
+    rule = alt.Chart(df_chart_source).mark_rule(color="gray").encode(
+        x="date:T",
+        opacity=alt.condition(hover, alt.value(0.5), alt.value(0))
+    ).transform_filter(hover)
+
     # Combine
-    chart = (lines + rule).properties(height=450)
+    chart = alt.layer(lines, selectors, rule).properties(height=450)
 
     st.altair_chart(chart, use_container_width=True)
 
@@ -624,3 +639,4 @@ def portfolio_page():
         ).properties(height=300)
         
         st.altair_chart(pie, use_container_width=True)
+

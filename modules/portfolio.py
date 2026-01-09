@@ -4,6 +4,7 @@ import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 import altair as alt
 import locale
+import time
 
 # Tenter de définir la locale pour le formatage
 try:
@@ -11,6 +12,7 @@ try:
 except locale.Error:
     pass
 
+# On suppose que ce fichier existe dans votre projet
 from services.data_loader import load_price_history
 
 # =========================
@@ -423,20 +425,30 @@ def portfolio_page():
             weights = {t: 1.0 for t in final_tickers}
 
     # ==========================================
-    # Data Loading
+    # Data Loading (CORRECTED SECTION)
     # ==========================================
     price_data = {}
-    for t in final_tickers:
-        try:
-            df = load_price_history(t, period=period, interval=interval)
-            if df is not None and not df.empty:
-                s = df["price"].dropna()
-                if s.index.tz is not None: s.index = s.index.tz_localize(None)
-                price_data[t] = s
-        except: pass
     
+    # FIX: Add a spinner so the user knows it is working
+    with st.spinner("Fetching market data..."):
+        for t in final_tickers:
+            try:
+                df = load_price_history(t, period=period, interval=interval)
+                if df is not None and not df.empty:
+                    s = df["price"].dropna()
+                    if s.index.tz is not None: s.index = s.index.tz_localize(None)
+                    price_data[t] = s
+            except: pass
+    
+    # FIX: Robust check to avoid "crash" on incomplete data
     if len(price_data) < 3:
-        st.error("Not enough valid data loaded (need at least 3 valid assets).")
+        st.warning(
+            f"**Syncing data...** found {len(price_data)} valid assets so far. "
+            "Please wait or check your internet connection."
+        )
+        # Optional: Button to manually trigger a retry if stuck
+        if st.button("Retry Loading Data"):
+            st.rerun()
         return
 
     prices_df = _align_prices(price_data)
@@ -612,4 +624,3 @@ def portfolio_page():
         ).properties(height=300)
         
         st.altair_chart(pie, use_container_width=True)
-

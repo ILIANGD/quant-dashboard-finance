@@ -1,78 +1,134 @@
 import os
 import sys
+import logging
 from datetime import datetime, timezone
 import pandas as pd
 
-# Ajout du dossier parent au path pour trouver le module 'services'
+# =========================================================
+# 1. Path Configuration (Safety Net)
+# =========================================================
+# Add the project root to sys.path to ensure 'services' can be imported
+# regardless of how the script is executed.
 current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
+project_root = os.path.dirname(current_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-from services.data_loader import load_price_history
+# Now we can safely import from services
+try:
+    from services.data_loader import load_price_history
+except ImportError as e:
+    print(f"CRITICAL ERROR: Could not import services. Check PYTHONPATH. Details: {e}")
+    sys.exit(1)
 
-# Configuration
+# =========================================================
+# 2. Setup Logging
+# =========================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# =========================================================
+# 3. Environment Variables & Constants
+# =========================================================
 TICKER = os.getenv("REPORT_TICKER", "BZ=F")
 PERIOD = os.getenv("REPORT_PERIOD", "6mo")
 INTERVAL = os.getenv("REPORT_INTERVAL", "1d")
-REPORTS_DIR = os.path.join(parent_dir, "reports")
 
-def max_drawdown_from_prices(prices: pd.Series) -> float:
+REPORTS_DIR = os.path.join(project_root, "reports")
+
+# =========================================================
+# 4. Helper Functions
+# =========================================================
+
+def calculate_max_drawdown(prices: pd.Series) -> float:
+    """Calculates the Maximum Drawdown of a price series."""
+    if prices.empty:
+        return float("nan")
+    
+    # Calculate returns
     rets = prices.pct_change().dropna()
-    if rets.empty: return float("nan")
-    cum = (1 + rets).cumprod()
-    dd = cum / cum.cummax() - 1
-    return float(dd.min())
+    
+    # Calculate cumulative returns (wealth index)
+    wealth_index = (1 + rets).cumprod()
+    
+    # Calculate running maximum
+    previous_peaks = wealth_index.cummax()
+    
+    # Calculate drawdown
+    drawdown = (wealth_index - previous_peaks) / previous_peaks
+    
+    return float(drawdown.min())
+
+# =========================================================
+# 5. Main Execution
+# =========================================================
 
 def main():
-    print(f"Starting report generation for {TICKER}...")
+    logger.info(f"Starting daily report generation for {TICKER}...")
+
+    # Ensure output directory exists
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
-    # 1. Load Data
     try:
+        # Load Data
         df = load_price_history(TICKER, period=PERIOD, interval=INTERVAL)
+        
+        if df is None or df.empty or "price" not in df.columns:
+            logger.error(f"No data returned for ticker {TICKER}. Aborting.")
+            sys.exit(1)
+
+        prices = df["price"].dropna()
+        if prices.empty:
+            logger.error(f"Price series is empty for {TICKER}. Aborting.")
+            sys.exit(1)
+
+        # Calculate Metrics
+        # 1. Volatility
+        rets = prices.pct_change().dropna()
+        vol_daily = float(rets.std())
+        vol_annual = vol_daily * (252 ** 0.5)
+
+        # 2. Prices
+        open_price = float(prices.iloc[0])
+        close_price = float(prices.iloc[-1])
+
+        # 3. Drawdown
+        max_dd = calculate_max_drawdown(prices)
+
+        # Prepare Data
+        now_utc = datetime.now(timezone.utc)
+        report_date_str = now_utc.strftime("%Y-%m-%d")
+        
+        report_data = {
+            "generated_at_utc": now_utc.strftime("%Y-%m-%d %H:%M:%S"),
+            "report_date": report_date_str,
+            "ticker": TICKER,
+            "period_analyzed": PERIOD,
+            "interval": INTERVAL,
+            "open_price": round(open_price, 4),
+            "close_price": round(close_price, 4),
+            "annualized_volatility": round(vol_annual, 4),
+            "max_drawdown": round(max_dd, 4),
+        }
+
+        # Generate Filename
+        # Sanitize ticker name (remove = or ^ for filenames)
+        safe_ticker = TICKER.replace('=', '').replace('^', '')
+        filename = f"{report_date_str}_{safe_ticker}_daily_report.csv"
+        file_path = os.path.join(REPORTS_DIR, filename)
+
+        # Save to CSV
+        pd.DataFrame([report_data]).to_csv(file_path, index=False)
+        
+        logger.info(f"SUCCESS: Report saved to {file_path}")
+        logger.info(f"Summary: Vol={vol_annual:.2%}, DD={max_dd:.2%}")
+
     except Exception as e:
-        print(f"Error loading data: {e}")
-        return
-
-    if df is None or df.empty or "price" not in df.columns:
-        print("No data returned.")
-        return
-
-    prices = df["price"].dropna()
-    if prices.empty:
-        print("Empty price series.")
-        return
-
-    # 2. Compute Metrics
-    rets = prices.pct_change().dropna()
-    vol_daily = float(rets.std())
-    vol_annual = vol_daily * (252 ** 0.5)
-
-    open_price = float(prices.iloc[0]) # Price at start of period
-    close_price = float(prices.iloc[-1]) # Price today
-    max_dd = max_drawdown_from_prices(prices)
-
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    report_data = {
-        "generated_at": now_str,
-        "ticker": TICKER,
-        "period": PERIOD,
-        "open_price_period": round(open_price, 2),
-        "close_price_current": round(close_price, 2),
-        "annual_volatility": round(vol_annual, 4),
-        "max_drawdown": round(max_dd, 4),
-    }
-
-    # 3. Save to CSV
-    # Clean ticker name for filename (e.g. BZ=F -> BZF)
-    safe_ticker = TICKER.replace("=", "").replace("^", "")
-    filename = f"{date_str}_{safe_ticker}_daily_report.csv"
-    file_path = os.path.join(REPORTS_DIR, filename)
-
-    pd.DataFrame([report_data]).to_csv(file_path, index=False)
-    print(f"Report saved successfully: {file_path}")
+        logger.exception(f"An unexpected error occurred: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

@@ -221,17 +221,14 @@ ASSET_DB = {
     }
 }
 
-# Flatten for dropdown: "Category | Name (Ticker)" -> "Ticker"
-# Categories are sorted alphabetically by key definition above
+# Flatten for dropdown
 FLAT_ASSETS = {}
 for category in sorted(ASSET_DB.keys()):
     items = ASSET_DB[category]
-    # Items are sorted alphabetically by Name
     for name in sorted(items.keys()):
         label = f"{category} | {name} ({items[name]})"
         FLAT_ASSETS[label] = items[name]
 
-# Reverse lookup for URL handling (Ticker -> Label)
 TICKER_TO_LABEL = {v: k for k, v in FLAT_ASSETS.items()}
 
 
@@ -333,12 +330,13 @@ def display_metrics_grid(metrics: dict):
 
 
 # =========================
-# ML Forecast Logic
+# ML Forecast Logic (Improved: Weighted Regression)
 # =========================
 
 def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = True):
     """
-    Trains a Linear Regression model on historical time steps to predict future trend.
+    Trains a Weighted Linear Regression model on historical time steps.
+    Weights are exponential to prioritize recent data over old history.
     """
     s = prices.dropna()
     if len(s) < 30: return pd.DataFrame(), {}
@@ -347,9 +345,14 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
     y = np.log(s.values) if use_log else s.values
     X = np.arange(len(y)).reshape(-1, 1)
 
-    # Train Model (ML Regression)
+    # --- WEIGHTING LOGIC ---
+    # Create exponential weights: recent points get significantly higher weight.
+    # geomspace from 0.01 to 1.0 ensures the last point is 100x more important than the first.
+    weights = np.geomspace(0.01, 1.0, len(y))
+
+    # Train Model (Weighted Linear Regression)
     model = LinearRegression()
-    model.fit(X, y)
+    model.fit(X, y, sample_weight=weights)
     
     # Calculate In-Sample Performance
     y_pred_hist = model.predict(X)
@@ -373,8 +376,10 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
     y_future_pred = model.predict(X_future)
 
     # Confidence Interval
+    # We estimate residual std dev based on recent errors to avoid overconfidence from the past
     residuals = y - y_pred_hist
-    std_resid = np.std(residuals)
+    # Weighted std of residuals? Simple std is safer/more conservative usually.
+    std_resid = np.std(residuals[-30:]) # Use last 30 residuals for uncertainty to reflect recent volatility
     z_score = 1.96 
     
     lower_log = y_future_pred - z_score * std_resid
@@ -405,7 +410,7 @@ def train_forecast_model(prices: pd.Series, horizon: int = 20, use_log: bool = T
         "rmse": rmse,
         "mae": mae,
         "mape": mape,
-        "model": "Linear Regression (Log)" if use_log else "Linear Regression"
+        "model": "Weighted Linear Regression (Trend Following)"
     }
 
     return df_fc, metrics
@@ -469,15 +474,27 @@ def single_asset_page():
 
         st.divider()
         
-        # Hardcoded Strategy Settings (Hidden)
-        fast, slow = 20, 50
-        lookback = 50
+        # RESTORED: Strategy Params
+        ac1, ac2 = st.columns(2)
+        with ac1:
+            st.markdown("**Strategy Settings**")
+            if "Momentum" in strategy_name:
+                sc1, sc2 = st.columns(2)
+                fast = sc1.slider("Fast MA", 5, 50, 20)
+                slow = sc2.slider("Slow MA", 20, 200, 50)
+                lookback = 50 # Unused but set for variable stability
+            elif "Breakout" in strategy_name:
+                lookback = st.slider("Breakout Lookback", 10, 200, 50)
+                fast, slow = 20, 50 # Unused defaults
+            else:
+                st.caption("Standard Buy & Hold strategy (no parameters).")
+                fast, slow, lookback = 20, 50, 50
         
-        # Forecast Settings
-        st.markdown("**Forecast Settings**")
-        fc1, fc2 = st.columns(2)
-        with fc1: horizon_fc = st.slider("Horizon (days)", 5, 120, 60)
-        with fc2: log_fc = st.toggle("Log-Space Model", value=True)
+        with ac2:
+            st.markdown("**Forecast Settings**")
+            fc1, fc2 = st.columns(2)
+            with fc1: horizon_fc = st.slider("Horizon (days)", 5, 120, 60)
+            with fc2: log_fc = st.toggle("Log-Space Model", value=True)
 
     # Load Data
     try:
